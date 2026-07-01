@@ -1,0 +1,10 @@
+# 盈析 · 电商利润经营分析系统 配置文件
+# 实际运行时可通过环境变量覆盖:
+#   SERVER_PORT, STATIC_DIR, DB_PATH
+
+server:
+  port: ":8080"
+  static_dir: "static"
+
+database:
+  path: "smartprofit.db"

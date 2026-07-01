@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>盈析 · 电商利润经营分析系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+
+    <!-- Toast -->
+    <div class="toast" v-show="toastMsg" v-text="toastMsg"></div>
+
+    <!-- ============================================================
+         Global Nav
+         ============================================================ -->
+    <nav class="global-nav">
+        <span class="brand">盈析</span>
+        <span class="user">欢迎回来，管理员</span>
+    </nav>
+
+    <!-- ============================================================
+         Page: Dashboard
+         ============================================================ -->
+    <div v-show="page === 'dashboard'">
+
+        <!-- Sub Nav -->
+        <div class="sub-nav">
+            <span class="label">📊 经营总览</span>
+            <div class="actions">
+                <input type="date" class="input-field" v-model="dateStart" aria-label="开始日期">
+                <span class="date-sep">至</span>
+                <input type="date" class="input-field" v-model="dateEnd" aria-label="结束日期">
+                <select class="input-field" aria-label="选择店铺">
+                    <option>全部店铺</option>
+                    <option v-for="s in shops" :key="s.shop_id" :value="s.shop_name" v-text="s.shop_name"></option>
+                </select>
+                <button class="btn-primary" @click="fetchShops(); fetchDashboardKpis()">查询</button>
+                <button class="btn-ghost" @click="copyYesterday()">🔁 复制昨日数据</button>
+            </div>
+        </div>
+
+        <!-- KPI Section -->
+        <div class="section section-canvas">
+            <div class="container">
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="label">总利润</div>
+                        <div class="value">{{ fmtMoney(kpis.total_profit) }}</div>
+                        <div class="change up">↑ --</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="label">总销售额</div>
+                        <div class="value">{{ fmtMoney(kpis.total_sales) }}</div>
+                        <div class="change up">↑ --</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="label">总推广支出</div>
+                        <div class="value">{{ fmtMoney(kpis.total_promo) }}</div>
+                        <div class="change down">↓ --</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="label">平均利润率</div>
+                        <div class="value">{{ kpis.avg_profit_rate ? kpis.avg_profit_rate.toFixed(1) + '%' : '--' }}</div>
+                        <div class="change up">↑ --</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Shop Table Section -->
+        <div class="section section-parchment">
+            <div class="container">
+                <div class="table-surface">
+                    <div class="table-scroll">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>排名</th><th>店铺名称</th><th>当日利润</th>
+                                    <th>累计利润</th><th>利润率</th><th>状态</th><th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="s in rankedShops" :key="s.shop_id">
+                                    <td>{{ s.rank }}</td>
+                                    <td class="cell-link" @click="goToShop(s)">{{ s.shop_name }}</td>
+                                    <td :class="profitClass(s.today_profit)">{{ fmtMoney(s.today_profit) }}</td>
+                                    <td>{{ fmtMoney(s.total_profit) }}</td>
+                                    <td>{{ (s.profit_rate || 0).toFixed(0) }}%</td>
+                                    <td>{{ s.status === '盈利' ? '盈利' : '亏损' }}</td>
+                                    <td><button class="btn-table-action" @click="goToShop(s)">查看详情</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================
+         Page: Shop Detail
+         ============================================================ -->
+    <div v-show="page === 'shop-detail'">
+
+        <!-- Sub Nav -->
+        <div class="sub-nav">
+            <span class="label" v-if="currentShop">🏪 {{ currentShop.shop_name }}</span>
+            <span class="label" v-else>🏪 店铺详情</span>
+            <div style="display:flex;align-items:center;gap:var(--s-xs);">
+                <span class="link-back" @click="goToDashboard()">← 返回总览</span>
+            </div>
+        </div>
+
+        <!-- Time Filter + Actions -->
+        <div class="sub-nav" style="top:96px;gap:var(--s-sm);">
+            <div class="filter-chips">
+                <button class="chip" :class="{ active: timeRange === 'today' }" @click="setTimeRange('today')">今日</button>
+                <button class="chip" :class="{ active: timeRange === 'yesterday' }" @click="setTimeRange('yesterday')">昨日</button>
+                <button class="chip" :class="{ active: timeRange === '7days' }" @click="setTimeRange('7days')">近 7 天</button>
+                <button class="chip" :class="{ active: timeRange === '30days' }" @click="setTimeRange('30days')">近 30 天</button>
+                <input type="date" class="input-field" v-model="dateStart" aria-label="开始日期">
+                <span class="date-sep">至</span>
+                <input type="date" class="input-field" v-model="dateEnd" aria-label="结束日期">
+                <button class="btn-primary" @click="fetchShopDetail()">查询</button>
+            </div>
+            <div style="display:flex;gap:var(--s-xs);">
+                <button class="btn-primary" @click="openFirstSku()">+ 新增 SKU 记录</button>
+                <button class="btn-ghost" @click="batchImport()">批量导入</button>
+                <button class="btn-ghost" @click="setFixedCosts()">固定成本</button>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="section section-canvas" style="padding-top:120px;">
+            <div class="container">
+                <div class="summary-grid" v-if="shopSummary">
+                    <div class="summary-card sales">
+                        <div class="label">总销售额</div>
+                        <div class="value">{{ fmtMoney(shopSummary.total_sales) }}</div>
+                        <div class="sub">真实销售额 {{ fmtMoney(shopSummary.total_real_sales || shopSummary.total_sales * 0.96) }}</div>
+                    </div>
+                    <div class="summary-card orders">
+                        <div class="label">总订单量</div>
+                        <div class="value">{{ fmt(shopSummary.total_orders) }}</div>
+                        <div class="sub">真实订单 {{ fmt(shopSummary.total_real_orders || shopSummary.total_orders) }} · 件数 {{ fmt(shopSummary.total_order_items || shopSummary.total_orders) }}</div>
+                    </div>
+                    <div class="summary-card fill">
+                        <div class="label">补单情况</div>
+                        <div class="value">{{ fmt(shopSummary.total_fill_count) }} 件</div>
+                        <div class="sub">金额 {{ fmtMoney(shopSummary.total_fill_amount) }} · 成本 {{ fmtMoney(shopSummary.total_fill_cost) }}</div>
+                    </div>
+                    <div class="summary-card promo">
+                        <div class="label">总推广费</div>
+                        <div class="value">{{ fmtMoney(shopSummary.total_promo) }}</div>
+                        <div class="sub">全站 / 搜索 / 推荐</div>
+                    </div>
+                    <div class="summary-card aftersale">
+                        <div class="label">总售后成本</div>
+                        <div class="value">{{ fmtMoney(shopSummary.total_aftersale_cost) }}</div>
+                        <div class="sub">退货 · 换货</div>
+                    </div>
+                    <div class="summary-card net">
+                        <div>
+                            <div class="label">净利润合计</div>
+                            <div class="value">{{ fmtMoney(shopSummary.net_profit) }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SKU Table -->
+        <div class="section section-parchment">
+            <div class="container">
+                <div v-if="loading" class="empty-state">加载中...</div>
+                <div class="table-surface" v-if="!loading">
+                    <div class="table-scroll">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>SKU 编码</th><th>商品名称</th><th>销售额</th>
+                                    <th>订单量</th><th>推广费</th><th>商品成本</th>
+                                    <th>利润</th><th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="sku in pagedSkus" :key="sku.sku_code">
+                                    <td>{{ sku.sku_code }}</td>
+                                    <td>{{ sku.product_name }}</td>
+                                    <td>{{ fmtMoney(sku.sales_amount) }}</td>
+                                    <td>{{ fmt(sku.order_count) }}</td>
+                                    <td>{{ fmtMoney(sku.promotion_total) }}</td>
+                                    <td>{{ fmtMoney(sku.product_cost) }}</td>
+                                    <td :class="profitClass(sku.final_profit)">{{ fmtMoney(sku.final_profit) }}</td>
+                                    <td><button class="btn-table-action" @click="openModal(sku)">编辑</button></td>
+                                </tr>
+                                <tr v-if="pagedSkus.length === 0">
+                                    <td colspan="8" class="empty-state">暂无数据 · 点击「+ 新增 SKU 记录」开始录入</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" v-if="skuItems.length > 0">
+                        <span class="total">共 {{ skuItems.length }} 条</span>
+                        <button @click="prevPage()" :disabled="currentPageNum <= 1">上一页</button>
+                        <button v-for="p in pageNumbers" :key="p"
+                            :class="{ active: p === currentPageNum }"
+                            @click="goToPage(p)" v-text="p"></button>
+                        <button @click="nextPage()" :disabled="currentPageNum >= totalPages">下一页</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================
+         Modal
+         ============================================================ -->
+    <div class="modal-overlay" :class="{ visible: modalVisible }" @click.self="closeModal()"
+         aria-modal="true" role="dialog">
+        <div class="modal" v-if="modalVisible">
+            <div class="modal-header">
+                <h3>编辑 SKU · {{ editingSkuCode }}</h3>
+                <button class="modal-close" @click="closeModal()" aria-label="关闭">&times;</button>
+            </div>
+
+            <div class="modal-tabs">
+                <button class="modal-tab" :class="{ active: modalTab === 0 }" @click="switchTab(0)">基础数据</button>
+                <button class="modal-tab" :class="{ active: modalTab === 1 }" @click="switchTab(1)">成本明细</button>
+                <button class="modal-tab" :class="{ active: modalTab === 2 }" @click="switchTab(2)">推广费用</button>
+                <button class="modal-tab" :class="{ active: modalTab === 3 }" @click="switchTab(3)">利润核算</button>
+            </div>
+
+            <div class="modal-body">
+
+                <!-- Tab 1: 基础数据 -->
+                <div class="tab-content" :class="{ active: modalTab === 0 }">
+                    <div class="form-grid">
+                        <div class="form-item"><label>销售额</label><input type="number" v-model.number="form.sales_amount"></div>
+                        <div class="form-item"><label>订单件数</label><input type="number" v-model.number="form.order_items_count"></div>
+                        <div class="form-item"><label>订单量</label><input type="number" v-model.number="form.order_count"></div>
+                        <div class="form-item"><label>真实销售额</label><input type="number" v-model.number="form.real_sales_amount"></div>
+                        <div class="form-item"><label>真实订单量</label><input type="number" v-model.number="form.real_order_count"></div>
+                        <div class="form-item"><label>补单金额</label><input type="number" v-model.number="form.fill_order_amount"></div>
+                        <div class="form-item"><label>补单数量</label><input type="number" v-model.number="form.fill_order_count"></div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: 成本明细 -->
+                <div class="tab-content" :class="{ active: modalTab === 1 }">
+                    <div class="form-grid">
+                        <div class="form-item"><label>商品成本</label><input type="number" v-model.number="form.product_cost"></div>
+                        <div class="form-item"><label>运费</label><input type="number" v-model.number="form.shipping_fee"></div>
+                        <div class="form-item"><label>交易服务费</label><input type="number" v-model.number="form.service_fee"></div>
+                        <div class="form-item"><label>交易税费</label><input type="number" v-model.number="form.tax_fee"></div>
+                        <div class="form-item"><label>运费险</label><input type="number" v-model.number="form.freight_insurance"></div>
+                        <div class="form-item"><label>换货量</label><input type="number" v-model.number="form.exchange_count"></div>
+                        <div class="form-item"><label>换货成本</label><input type="number" v-model.number="form.exchange_cost"></div>
+                        <div class="form-item"><label>退货量</label><input type="number" v-model.number="form.return_count"></div>
+                        <div class="form-item"><label>退货成本</label><input type="number" v-model.number="form.return_cost"></div>
+                        <div class="form-item"><label>补单成本</label><input type="number" v-model.number="form.fill_order_cost"></div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: 推广费用 -->
+                <div class="tab-content" :class="{ active: modalTab === 2 }">
+                    <div class="form-grid">
+                        <div class="form-item"><label>全站营销</label><input type="number" v-model.number="form.promotion_alliance"></div>
+                        <div class="form-item"><label>智能投放</label><input type="number" v-model.number="form.promotion_auto"></div>
+                        <div class="form-item"><label>京东联盟</label><input type="number" v-model.number="form.promotion_jd_union"></div>
+                        <div class="form-item"><label>搜索快车</label><input type="number" v-model.number="form.promotion_search"></div>
+                        <div class="form-item"><label>推荐广告</label><input type="number" v-model.number="form.promotion_recommend"></div>
+                    </div>
+                </div>
+
+                <!-- Tab 4: 利润核算 -->
+                <div class="tab-content" :class="{ active: modalTab === 3 }">
+                    <p class="profit-formula"><code v-text="profitFormulaText"></code></p>
+                    <p style="font-size:13px;color:var(--ink-soft);">修改前三个标签页中的任意金额，此处实时更新</p>
+                    <div class="profit-result">
+                        <div class="label">最终利润</div>
+                        <div class="value" :class="profitClass(profitResult)">{{ fmtMoney(profitResult) }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn-ghost" @click="closeModal()">取消</button>
+                <button class="btn-primary" @click="saveData()">保存并提交</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Offline Banner -->
+    <div class="offline-banner" v-if="!apiAvailable && page === 'shop-detail'">
+        ⚠️ 后端未连接，当前显示离线数据
+    </div>
+
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
