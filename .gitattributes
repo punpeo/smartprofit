@@ -1,0 +1,9 @@
+# go源码统一LF
+*.go text eol=lf
+# 脚本文件统一LF
+*.sh text eol=lf
+# Windows批处理用CRLF
+*.bat text eol=crlf
+# 二进制文件不转换
+*.png binary
+*.exe binary
