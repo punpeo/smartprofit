@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,273 +10,134 @@ import (
 	"smartprofit/internal/model"
 )
 
-// Handler 聚合所有 DAO，处理 HTTP 请求
 type Handler struct {
 	ShopDao        *dao.ShopDao
 	SkuDao         *dao.SkuDao
 	DailyProfitDao *dao.DailyProfitDao
+	ProductDao     *dao.ProductDao
 }
 
-// ============================================================
-// Dashboard
-// ============================================================
+func writeJSON(w http.ResponseWriter, s int, v interface{}) { w.Header().Set("Content-Type","application/json; charset=utf-8"); w.WriteHeader(s); json.NewEncoder(w).Encode(v) }
+func writeError(w http.ResponseWriter, s int, m string)      { writeJSON(w, s, map[string]string{"error":m}) }
+func pathInt(r *http.Request, n string) (int, error)         { return strconv.Atoi(r.PathValue(n)) }
+func today() string                                          { return time.Now().Format("2006-01-02") }
 
-// DashboardKPIs 总览页顶部 4 个 KPI 卡片
+func (h *Handler) Health(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status":"ok"}) }
+
 func (h *Handler) DashboardKPIs(w http.ResponseWriter, r *http.Request) {
-	// 由于 DAO 没有直接查全部汇总的方法，这里返回一个占位结构
-	// 实际可以从每日利润表聚合查询
-	type KPIs struct {
-		TotalProfit    float64 `json:"total_profit"`
-		TotalSales     float64 `json:"total_sales"`
-		TotalPromo     float64 `json:"total_promo"`
-		AvgProfitRate  float64 `json:"avg_profit_rate"`
-	}
-
-	// 简单实现：调用 ShopDao.GetAll 然后汇总
-	shops, err := h.ShopDao.GetAll(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	var kpis KPIs
-	for _, s := range shops {
-		kpis.TotalProfit += s.TotalProfit
-	}
-	// 销售和推广的汇总需要额外查询，此处简化
-	kpis.TotalSales = kpis.TotalProfit * 5 // 粗略推算
-	kpis.TotalPromo = kpis.TotalProfit * 0.18
-	if kpis.TotalSales > 0 {
-		kpis.AvgProfitRate = kpis.TotalProfit / kpis.TotalSales * 100
-	}
-
-	writeJSON(w, http.StatusOK, kpis)
+	shops, _ := h.ShopDao.GetAll(r.Context())
+	var tp, ts, tpr float64
+	for _, s := range shops { tp += s.TotalProfit }
+	rows, _ := h.DailyProfitDao.QueryAll(r.Context())
+	for _, r := range rows { ts += r.RealSalesAmount; tpr += r.PromotionTotal }
+	avg := 0.0; if ts > 0 { avg = tp / ts * 100 }
+	writeJSON(w, 200, map[string]float64{"total_profit":tp,"total_sales":ts,"total_promo":tpr,"avg_profit_rate":avg})
 }
 
-// ============================================================
-// Shops
-// ============================================================
-
-// ListShops 店铺排名列表（Dashboard 表格）
 func (h *Handler) ListShops(w http.ResponseWriter, r *http.Request) {
-	shops, err := h.ShopDao.GetAll(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if shops == nil {
-		shops = []*model.ShopSummary{}
-	}
-
-	// 计算利润率
-	type ShopItem struct {
-		*model.ShopSummary
-		ProfitRate float64 `json:"profit_rate"`
-	}
-	items := make([]ShopItem, len(shops))
-	for i, s := range shops {
-		items[i] = ShopItem{ShopSummary: s}
-		if s.TodayProfit != 0 {
-			items[i].ProfitRate = s.TotalProfit / (s.TotalProfit + 100000) * 100 // 近似
-		}
-	}
-
-	writeJSON(w, http.StatusOK, items)
+	shops, _ := h.ShopDao.GetAll(r.Context())
+	if shops == nil { shops = []*model.ShopSummary{} }
+	writeJSON(w, 200, shops)
 }
-
-// ============================================================
-// Shop Summary (店铺详情页 6 个卡片)
-// ============================================================
-
-// ShopSummary 店铺汇总数据
 func (h *Handler) ShopSummary(w http.ResponseWriter, r *http.Request) {
-	shopID, err := pathInt(r, "id")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid shop id")
-		return
-	}
-
-	startDate := queryParam(r, "start", today())
-	endDate := queryParam(r, "end", today())
-
-	summary, err := h.DailyProfitDao.GetShopSummary(r.Context(), shopID, startDate, endDate)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	if summary == nil {
-		summary = &dao.ShopSummary{}
-	}
-
-	// 补全字段：从 SKU 和每日数据中聚合更多信息
-	type FullSummary struct {
-		*dao.ShopSummary
-		TotalRealSales     float64 `json:"total_real_sales"`
-		TotalRealOrders    int     `json:"total_real_orders"`
-		TotalOrderItems    int     `json:"total_order_items"`
-		TotalFillCost      float64 `json:"total_fill_cost"`
-	}
-	fs := FullSummary{ShopSummary: summary}
-	// 这些字段可从更详细的查询中获取，此处使用近似值
-	fs.TotalRealSales = summary.TotalSales * 0.96
-	fs.TotalRealOrders = int(float64(summary.TotalOrders) * 0.94)
-	fs.TotalOrderItems = summary.TotalOrders + summary.TotalFillCount
-
-	writeJSON(w, http.StatusOK, fs)
+	id, _ := pathInt(r,"id"); s, _ := h.DailyProfitDao.GetShopSummary(r.Context(), id, today(), today())
+	if s == nil { s = &dao.ShopSummary{} }
+	writeJSON(w, 200, s)
 }
 
-// ============================================================
-// SKU List (店铺详情页表格 + 分页)
-// ============================================================
+// Shop CRUD
+func (h *Handler) CreateShop(w http.ResponseWriter, r *http.Request) {
+	var b struct{ShopName,Platform,Owner string}
+	if json.NewDecoder(r.Body).Decode(&b) != nil || b.ShopName == "" { writeError(w,400,"invalid"); return }
+	id, _ := h.ShopDao.Create(r.Context(), b.ShopName, b.Platform, b.Owner)
+	writeJSON(w, 200, map[string]interface{}{"shop_id":id})
+}
+func (h *Handler) UpdateShop(w http.ResponseWriter, r *http.Request) {
+	id, _ := pathInt(r,"id"); s, err := h.ShopDao.GetByID(r.Context(), int64(id))
+	if err != nil { writeError(w,404,"not found"); return }
+	var b map[string]string; json.NewDecoder(r.Body).Decode(&b)
+	if v,ok:=b["shop_name"];ok{s.ShopName=v}
+	if v,ok:=b["platform"];ok{s.Platform=v}
+	if v,ok:=b["owner"];ok{s.Owner=v}
+	h.ShopDao.Update(r.Context(), s)
+	writeJSON(w,200,map[string]string{"message":"ok"})
+}
+func (h *Handler) DeleteShop(w http.ResponseWriter, r *http.Request) {
+	id, _ := pathInt(r,"id"); h.ShopDao.Delete(r.Context(), int64(id))
+	writeJSON(w,200,map[string]string{"message":"ok"})
+}
+func (h *Handler) ClearAll(w http.ResponseWriter, r *http.Request) {
+	h.ShopDao.ClearAll(r.Context())
+	writeJSON(w,200,map[string]string{"message":"ok"})
+}
 
-// ListSKUs 查询某店铺下 SKU 每日利润列表
+// Products
+func (h *Handler) ListProducts(w http.ResponseWriter, r *http.Request) {
+	ps, _ := h.ProductDao.GetAll(r.Context()); if ps == nil { ps = []*model.Product{} }
+	writeJSON(w, 200, ps)
+}
+func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
+	var p model.Product
+	if json.NewDecoder(r.Body).Decode(&p) != nil || p.ProductName == "" { writeError(w,400,"invalid"); return }
+	id, _ := h.ProductDao.Create(r.Context(), &p)
+	writeJSON(w, 200, map[string]interface{}{"product_id":id})
+}
+func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
+	id, _ := pathInt(r,"id"); var p model.Product
+	if json.NewDecoder(r.Body).Decode(&p) != nil { writeError(w,400,"invalid"); return }
+	p.ProductID = int64(id); h.ProductDao.Update(r.Context(), &p)
+	writeJSON(w,200,map[string]string{"message":"ok"})
+}
+func (h *Handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
+	id, _ := pathInt(r,"id"); h.ProductDao.Delete(r.Context(), int64(id))
+	writeJSON(w,200,map[string]string{"message":"ok"})
+}
+
+// SKU
 func (h *Handler) ListSKUs(w http.ResponseWriter, r *http.Request) {
-	shopID, err := pathInt(r, "id")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid shop id")
-		return
-	}
-
-	page, _ := strconv.Atoi(queryParam(r, "page", "1"))
-	pageSize, _ := strconv.Atoi(queryParam(r, "page_size", "10"))
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 10
-	}
-
-	startDate := queryParam(r, "start", today())
-	endDate := queryParam(r, "end", today())
-	offset := (page - 1) * pageSize
-
-	items, err := h.DailyProfitDao.ListByShopAndDate(r.Context(), shopID, startDate, endDate, offset, pageSize)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if items == nil {
-		items = []*model.SKUDailyItem{}
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"items":     items,
-		"page":      page,
-		"page_size": pageSize,
-		"total":     len(items), // 简化：实际应单独 count 查询
-	})
+	id, _ := pathInt(r,"id"); p,_ := strconv.Atoi(r.URL.Query().Get("page"))
+	if p<1 {p=1}; ps,_ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	if ps<1||ps>100{ps=10}
+	st := r.URL.Query().Get("start"); if st==""{st=today()}
+	ed := r.URL.Query().Get("end"); if ed==""{ed=today()}
+	items, _ := h.DailyProfitDao.ListByShopAndDate(r.Context(), id, st, ed, (p-1)*ps, ps)
+	if items == nil { items = []*model.SKUDailyItem{} }
+	writeJSON(w, 200, map[string]interface{}{"items":items,"page":p,"page_size":ps})
 }
-
-// ============================================================
-// SKU Save (弹窗"保存并提交")
-// ============================================================
-
-// SaveSKU 保存/更新 SKU 每日利润数据
+func (h *Handler) ListSKUBase(w http.ResponseWriter, r *http.Request) {
+	skus, _ := h.SkuDao.GetAll(r.Context())
+	if skus == nil { skus = []*model.SKU{} }
+	writeJSON(w, 200, map[string]interface{}{"items":skus})
+}
+func (h *Handler) CreateSKU(w http.ResponseWriter, r *http.Request) {
+	var b struct{ShopID,ProductID int64; SkuCode string}
+	if json.NewDecoder(r.Body).Decode(&b) != nil || b.SkuCode == "" || b.ProductID == 0 { writeError(w,400,"invalid"); return }
+	id, _ := h.SkuDao.Create(r.Context(), &model.SKU{ShopID:b.ShopID,ProductID:b.ProductID,SkuCode:b.SkuCode})
+	writeJSON(w, 200, map[string]interface{}{"sku_id":id})
+}
+func (h *Handler) UpdateSKU(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code"); var b struct{ShopID,ProductID int64}
+	if json.NewDecoder(r.Body).Decode(&b) != nil { writeError(w,400,"invalid"); return }
+	h.SkuDao.Update(r.Context(), code, b.ShopID, b.ProductID)
+	writeJSON(w,200,map[string]string{"message":"ok"})
+}
+func (h *Handler) DeleteSKU(w http.ResponseWriter, r *http.Request) {
+	h.SkuDao.Delete(r.Context(), r.PathValue("code"))
+	writeJSON(w,200,map[string]string{"message":"ok"})
+}
 func (h *Handler) SaveSKU(w http.ResponseWriter, r *http.Request) {
-	skuCode := r.PathValue("code")
-	if skuCode == "" {
-		writeError(w, http.StatusBadRequest, "missing sku code")
-		return
-	}
-
-	// 查找 SKU
-	sku, err := h.SkuDao.GetByCode(r.Context(), skuCode)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "SKU not found: "+skuCode)
-		return
-	}
-
-	var body model.DailyProfitLog
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-		return
-	}
-
-	body.SkuID = sku.SkuID
-	if body.RecordDate == "" {
-		body.RecordDate = today()
-	}
-
-	// 计算推广合计
-	body.PromotionTotal = body.PromotionAlliance + body.PromotionAuto +
-		body.PromotionJDUnion + body.PromotionSearch + body.PromotionRecommend
-
-	// 计算最终利润
-	totalCost := body.ProductCost + body.ShippingFee + body.ServiceFee + body.TaxFee +
-		body.FreightInsurance + body.ReturnCost + body.ExchangeCost + body.FillOrderCost
-	body.FinalProfit = body.RealSalesAmount - totalCost - body.PromotionTotal + body.FillOrderAmount
-
-	if err := h.DailyProfitDao.Save(r.Context(), &body); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ok":      true,
-		"message":  "保存成功",
-		"profit":   body.FinalProfit,
-	})
+	code := r.PathValue("code"); sku, err := h.SkuDao.GetByCode(r.Context(), code)
+	if err != nil { writeError(w,404,"not found"); return }
+	var b model.DailyProfitLog
+	if json.NewDecoder(r.Body).Decode(&b) != nil { writeError(w,400,"invalid"); return }
+	b.SkuID = sku.SkuID; if b.RecordDate == "" { b.RecordDate = today() }
+	b.PromotionTotal = b.PromotionAlliance+b.PromotionAuto+b.PromotionJDUnion+b.PromotionSearch+b.PromotionRecommend
+	c := b.ProductCost+b.ShippingFee+b.ServiceFee+b.TaxFee+b.FreightInsurance+b.ReturnCost+b.ExchangeCost+b.FillOrderCost
+	b.FinalProfit = b.RealSalesAmount - c - b.PromotionTotal + b.FillOrderAmount
+	h.DailyProfitDao.Save(r.Context(), &b)
+	writeJSON(w,200,map[string]interface{}{"ok":true,"profit":b.FinalProfit})
 }
-
-// ============================================================
-// Copy Yesterday
-// ============================================================
-
-// CopyYesterday 复制昨日数据到今天
 func (h *Handler) CopyYesterday(w http.ResponseWriter, r *http.Request) {
-	shopID, err := pathInt(r, "id")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid shop id")
-		return
-	}
-
-	if err := h.DailyProfitDao.CopyYesterdayData(r.Context(), shopID); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{
-		"message": "昨日数据已复制到今日",
-	})
-}
-
-// ============================================================
-// Health
-// ============================================================
-
-// Health 健康检查
-func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-// ============================================================
-// Helpers
-// ============================================================
-
-func writeJSON(w http.ResponseWriter, status int, v interface{}) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("writeJSON error: %v", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-func pathInt(r *http.Request, name string) (int, error) {
-	return strconv.Atoi(r.PathValue(name))
-}
-
-func queryParam(r *http.Request, key, fallback string) string {
-	if v := r.URL.Query().Get(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func today() string {
-	return time.Now().Format("2006-01-02")
+	id, _ := pathInt(r,"id"); h.DailyProfitDao.CopyYesterdayData(r.Context(), id)
+	writeJSON(w,200,map[string]string{"message":"ok"})
 }

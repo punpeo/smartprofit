@@ -112,8 +112,7 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
-	// 插入种子数据（仅当表为空时）
-	seed(db)
+	// seed(db) // 演示数据已关闭，如需恢复取消此行注释
 	return nil
 }
 

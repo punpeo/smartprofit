@@ -200,3 +200,22 @@ func (d *DailyProfitDao) CopyYesterdayData(ctx context.Context, shopID int) erro
 	_, err := d.db.ExecContext(ctx, copyYesterdaySQL, shopID)
 	return err
 }
+
+// QueryAllResult KPI 聚合用
+type QueryAllResult struct {
+	RealSalesAmount float64
+	PromotionTotal  float64
+}
+
+func (d *DailyProfitDao) QueryAll(ctx context.Context) ([]QueryAllResult, error) {
+	rows, err := d.db.QueryContext(ctx, "SELECT real_sales_amount, promotion_total FROM daily_profit_logs")
+	if err != nil { return nil, err }
+	defer rows.Close()
+	var r []QueryAllResult
+	for rows.Next() {
+		var q QueryAllResult
+		if err := rows.Scan(&q.RealSalesAmount, &q.PromotionTotal); err != nil { return nil, err }
+		r = append(r, q)
+	}
+	return r, nil
+}
