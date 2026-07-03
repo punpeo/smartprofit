@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { X, Calculator } from 'lucide-react'
 import { api } from '../api'
 
 const TABS = ['基础数据', '成本明细', '推广费用', '利润核算']
+const todayStr = new Date().toISOString().slice(0, 10)
 
 const INIT = (sku) => ({
   sales_amount: sku.sales_amount || 0,
@@ -31,33 +32,55 @@ const INIT = (sku) => ({
 })
 
 function Input({ label, value, onChange }) {
+  // 显示空字符串当值为0，允许用户直接输入无干扰
+  const display = value === 0 ? '' : value
   return (
     <label className="flex flex-col gap-1">
       <span className="text-xs text-white/55">{label}</span>
       <input
         type="number"
-        value={value}
-        onChange={e => onChange(parseFloat(e.target.value) || 0)}
+        value={display}
+        placeholder="0"
+        onChange={e => onChange(e.target.value === '' ? 0 : (parseFloat(e.target.value) || 0))}
         className="px-3 py-2 rounded-lg border border-white/[0.09] bg-white/[0.04] text-sm text-white/80 outline-none focus:border-blue-400/30 focus:bg-white/[0.07] transition-all"
       />
     </label>
   )
 }
 
-export function SKUModal({ sku, onClose, onSave }) {
+export function SKUModal({ sku, onClose, onSave, mode = 'new', recordDate = todayStr }) {
   const [tab, setTab] = useState(0)
   const [form, setForm] = useState(() => INIT(sku))
   const [saving, setSaving] = useState(false)
+  const [loaded, setLoaded] = useState(mode !== 'edit') // edit 模式需等待数据
+
+  // edit 模式：拉取已有 daily_profit_logs 数据
+  useEffect(() => {
+    if (mode !== 'edit' || !sku.sku_code) return
+    fetch(`/api/skus/${sku.sku_code}/daily?date=${recordDate}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.log_id) setForm(INIT(data))
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [sku.sku_code, recordDate, mode])
 
   const set = (key) => (v) => setForm(f => ({ ...f, [key]: v }))
 
-  // 自动计算成本：读取商品(product)默认成本参数，套用公式
+  // 真实销售额/订单量 = 总额 - 补单（自动计算，无需手动填）
+  const realSales = useMemo(() => (form.sales_amount || 0) - (form.fill_order_amount || 0), [form.sales_amount, form.fill_order_amount])
+  const realOrders = useMemo(() => Math.max(0, (form.order_count || 0) - (form.fill_order_count || 0)), [form.order_count, form.fill_order_count])
+
+  // 弹窗打开时自动从 product 表拉取默认成本参数
+  useEffect(() => { if (sku.product_id) autoCalc() }, [sku.product_id])
+
   async function autoCalc() {
     try {
       const resp = await fetch('/api/products')
       const products = await resp.json()
       const product = (products || []).find(p => p.product_id === (sku.product_id || 0))
-      if (!product) return alert('未找到关联商品，请先在商品管理中设置默认成本参数')
+      if (!product) return // 无关联商品则跳过
 
       setForm(f => ({
         ...f,
@@ -67,10 +90,10 @@ export function SKUModal({ sku, onClose, onSave }) {
         tax_fee: Math.round((f.sales_amount || 0) * (product.default_tax_rate || 0) * 100) / 100,
         freight_insurance: Math.round((f.order_count || 0) * (product.default_freight_insurance || 0) * 100) / 100,
         exchange_cost: Math.round((f.exchange_count || 0) * (product.default_exchange_cost || 0) * 100) / 100,
-        return_cost: Math.round((f.return_count || 0) * (product.default_return_cost || 0) * 100) / 100,
+        return_cost: Math.round((f.return_count || 0) * (0.958 * (f.sales_amount || 0) / Math.max(1, f.order_count || 1) - (product.default_cost || 0)) * 100) / 100,
         fill_order_cost: Math.round((f.fill_order_count || 0) * (product.default_fill_order_cost || 0) * 100) / 100,
       }))
-    } catch {}
+    } catch { }
   }
 
   const profit = useMemo(() => {
@@ -92,10 +115,10 @@ export function SKUModal({ sku, onClose, onSave }) {
   async function handleSave() {
     setSaving(true)
     const promoTotal = form.promotion_alliance + form.promotion_auto + form.promotion_jd_union + form.promotion_search + form.promotion_recommend
-    const payload = { ...form, promotion_total: promoTotal, final_profit: profit, record_date: '' }
+    const payload = { ...form, real_sales_amount: realSales, real_order_count: realOrders, promotion_total: promoTotal, final_profit: profit, record_date: recordDate }
     try {
       await api.saveSKU(sku.sku_code, payload)
-    } catch {}
+    } catch { }
     onSave({ ...sku, ...form, promotion_total: promoTotal, final_profit: profit })
     setSaving(false)
   }
@@ -118,8 +141,13 @@ export function SKUModal({ sku, onClose, onSave }) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.07]">
           <div>
-            <h2 className="text-base font-medium text-white">编辑 SKU</h2>
-            <p className="text-xs text-white/55 mt-0.5 font-mono">{sku.sku_code} · {sku.product_name}</p>
+            <h2 className="text-base font-medium text-white">
+              {mode === 'edit' ? '✏️ 编辑利润数据' : '➕ 新增利润数据'}
+            </h2>
+            <p className="text-xs text-white/55 mt-0.5 font-mono">
+              {sku.sku_code} · {sku.product_name || ''} · 📅 {recordDate}
+              <span className="text-white/25 ml-2">{mode === 'edit' ? '更新现有记录' : '创建新记录'}</span>
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={autoCalc}
@@ -145,31 +173,54 @@ export function SKUModal({ sku, onClose, onSave }) {
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          {tab === 0 && (
-            <div className="grid grid-cols-2 gap-4">
-              <Input label="销售额" value={form.sales_amount} onChange={set('sales_amount')} />
-              <Input label="订单件数" value={form.order_items_count} onChange={set('order_items_count')} />
-              <Input label="订单量" value={form.order_count} onChange={set('order_count')} />
-              <Input label="真实销售额" value={form.real_sales_amount} onChange={set('real_sales_amount')} />
-              <Input label="真实订单量" value={form.real_order_count} onChange={set('real_order_count')} />
-              <Input label="补单金额" value={form.fill_order_amount} onChange={set('fill_order_amount')} />
-              <Input label="补单数量" value={form.fill_order_count} onChange={set('fill_order_count')} />
+        <div className="flex-1 overflow-y-auto px-6 py-5" style={{ minHeight: 420 }}>
+          {!loaded ? (
+            <div className="flex items-center justify-center h-full py-20">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-5 h-5 rounded-full border-2 border-blue-400/20 border-t-blue-400 animate-spin" />
+                <span className="text-xs text-white/30">加载已有数据...</span>
+              </div>
             </div>
+          ) : (
+          <>
+          {tab === 0 && (
+            <>
+              <p className="text-xs text-white/30 mb-3">销售数据 &amp; 数量指标</p>
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="销售额" value={form.sales_amount} onChange={set('sales_amount')} />
+                <Input label="订单件数" value={form.order_items_count} onChange={set('order_items_count')} />
+                <Input label="订单量" value={form.order_count} onChange={set('order_count')} />
+                <Input label="补单数量" value={form.fill_order_count} onChange={set('fill_order_count')} />
+                <Input label="补单金额" value={form.fill_order_amount} onChange={set('fill_order_amount')} />
+                <Input label="退货量" value={form.return_count} onChange={set('return_count')} />
+                <Input label="换货量" value={form.exchange_count} onChange={set('exchange_count')} />
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs text-white/55">真实销售额（自动）</span>
+                  <input type="number" value={realSales || ''} disabled
+                    className="px-3 py-2 rounded-lg border border-white/[0.06] bg-white/[0.01] text-sm text-white/50 outline-none" />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs text-white/55">真实订单量（自动）</span>
+                  <input type="number" value={realOrders || ''} disabled
+                    className="px-3 py-2 rounded-lg border border-white/[0.06] bg-white/[0.01] text-sm text-white/50 outline-none" />
+                </label>
+              </div>
+            </>
           )}
           {tab === 1 && (
-            <div className="grid grid-cols-2 gap-4">
-              <Input label="商品成本" value={form.product_cost} onChange={set('product_cost')} />
-              <Input label="运费" value={form.shipping_fee} onChange={set('shipping_fee')} />
-              <Input label="交易服务费" value={form.service_fee} onChange={set('service_fee')} />
-              <Input label="交易税费" value={form.tax_fee} onChange={set('tax_fee')} />
-              <Input label="运费险" value={form.freight_insurance} onChange={set('freight_insurance')} />
-              <Input label="换货量" value={form.exchange_count} onChange={set('exchange_count')} />
-              <Input label="换货成本" value={form.exchange_cost} onChange={set('exchange_cost')} />
-              <Input label="退货量" value={form.return_count} onChange={set('return_count')} />
-              <Input label="退货成本" value={form.return_cost} onChange={set('return_cost')} />
-              <Input label="补单成本" value={form.fill_order_cost} onChange={set('fill_order_cost')} />
-            </div>
+            <>
+              <p className="text-xs text-white/30 mb-3">自动从商品表(product)默认参数计算，也可手动改</p>
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="商品成本" value={form.product_cost} onChange={set('product_cost')} />
+                <Input label="运费" value={form.shipping_fee} onChange={set('shipping_fee')} />
+                <Input label="交易服务费" value={form.service_fee} onChange={set('service_fee')} />
+                <Input label="交易税费" value={form.tax_fee} onChange={set('tax_fee')} />
+                <Input label="运费险" value={form.freight_insurance} onChange={set('freight_insurance')} />
+                <Input label="退货成本" value={form.return_cost} onChange={set('return_cost')} />
+                <Input label="换货成本" value={form.exchange_cost} onChange={set('exchange_cost')} />
+                <Input label="补单成本" value={form.fill_order_cost} onChange={set('fill_order_cost')} />
+              </div>
+            </>
           )}
           {tab === 2 && (
             <div className="grid grid-cols-2 gap-4">
@@ -197,8 +248,9 @@ export function SKUModal({ sku, onClose, onSave }) {
               </div>
             </div>
           )}
+          </>
+          )}
         </div>
-
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/[0.07]">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full border border-white/[0.12] text-sm text-white/80 hover:text-white hover:border-white/15 transition-all">

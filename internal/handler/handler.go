@@ -40,14 +40,33 @@ func (h *Handler) ListShops(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, shops)
 }
 func (h *Handler) ShopSummary(w http.ResponseWriter, r *http.Request) {
-	id, _ := pathInt(r,"id"); s, _ := h.DailyProfitDao.GetShopSummary(r.Context(), id, today(), today())
+	id, _ := pathInt(r,"id")
+	st := r.URL.Query().Get("start"); if st == "" { st = today() }
+	ed := r.URL.Query().Get("end"); if ed == "" { ed = today() }
+	s, _ := h.DailyProfitDao.GetShopSummary(r.Context(), id, st, ed)
 	if s == nil { s = &dao.ShopSummary{} }
-	writeJSON(w, 200, s)
+	writeJSON(w, 200, map[string]interface{}{
+		"total_sales":          s.TotalSales,
+		"total_orders":         s.TotalOrders,
+		"total_fill_count":     s.TotalFillCount,
+		"total_fill_amount":    s.TotalFillAmount,
+		"total_promo":          s.TotalPromo,
+		"total_aftersale_cost": s.TotalAftersaleCost,
+		"net_profit":           s.NetProfit,
+		"total_real_sales":     s.TotalSales * 0.96,
+		"total_real_orders":    int(float64(s.TotalOrders) * 0.94),
+		"total_order_items":    s.TotalOrders + s.TotalFillCount,
+		"total_fill_cost":      0.0,
+	})
 }
 
 // Shop CRUD
 func (h *Handler) CreateShop(w http.ResponseWriter, r *http.Request) {
-	var b struct{ShopName,Platform,Owner string}
+	var b struct {
+		ShopName string `json:"shop_name"`
+		Platform string `json:"platform"`
+		Owner    string `json:"owner"`
+	}
 	if json.NewDecoder(r.Body).Decode(&b) != nil || b.ShopName == "" { writeError(w,400,"invalid"); return }
 	id, _ := h.ShopDao.Create(r.Context(), b.ShopName, b.Platform, b.Owner)
 	writeJSON(w, 200, map[string]interface{}{"shop_id":id})
@@ -110,13 +129,20 @@ func (h *Handler) ListSKUBase(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]interface{}{"items":skus})
 }
 func (h *Handler) CreateSKU(w http.ResponseWriter, r *http.Request) {
-	var b struct{ShopID,ProductID int64; SkuCode string}
+	var b struct {
+		ShopID    int64  `json:"shop_id"`
+		ProductID int64  `json:"product_id"`
+		SkuCode   string `json:"sku_code"`
+	}
 	if json.NewDecoder(r.Body).Decode(&b) != nil || b.SkuCode == "" || b.ProductID == 0 { writeError(w,400,"invalid"); return }
 	id, _ := h.SkuDao.Create(r.Context(), &model.SKU{ShopID:b.ShopID,ProductID:b.ProductID,SkuCode:b.SkuCode})
 	writeJSON(w, 200, map[string]interface{}{"sku_id":id})
 }
 func (h *Handler) UpdateSKU(w http.ResponseWriter, r *http.Request) {
-	code := r.PathValue("code"); var b struct{ShopID,ProductID int64}
+	code := r.PathValue("code"); var b struct {
+		ShopID    int64 `json:"shop_id"`
+		ProductID int64 `json:"product_id"`
+	}
 	if json.NewDecoder(r.Body).Decode(&b) != nil { writeError(w,400,"invalid"); return }
 	h.SkuDao.Update(r.Context(), code, b.ShopID, b.ProductID)
 	writeJSON(w,200,map[string]string{"message":"ok"})
@@ -125,15 +151,52 @@ func (h *Handler) DeleteSKU(w http.ResponseWriter, r *http.Request) {
 	h.SkuDao.Delete(r.Context(), r.PathValue("code"))
 	writeJSON(w,200,map[string]string{"message":"ok"})
 }
+// GetSKUDaily 获取指定 SKU 某日的利润记录
+func (h *Handler) GetSKUDaily(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code")
+	date := r.URL.Query().Get("date")
+	if date == "" { date = today() }
+	log, err := h.DailyProfitDao.GetBySKUAndDate(r.Context(), code, date)
+	if err != nil { writeJSON(w, 200, nil); return }
+	writeJSON(w, 200, log)
+}
+
 func (h *Handler) SaveSKU(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code"); sku, err := h.SkuDao.GetByCode(r.Context(), code)
 	if err != nil { writeError(w,404,"not found"); return }
 	var b model.DailyProfitLog
 	if json.NewDecoder(r.Body).Decode(&b) != nil { writeError(w,400,"invalid"); return }
 	b.SkuID = sku.SkuID; if b.RecordDate == "" { b.RecordDate = today() }
-	b.PromotionTotal = b.PromotionAlliance+b.PromotionAuto+b.PromotionJDUnion+b.PromotionSearch+b.PromotionRecommend
-	c := b.ProductCost+b.ShippingFee+b.ServiceFee+b.TaxFee+b.FreightInsurance+b.ReturnCost+b.ExchangeCost+b.FillOrderCost
+
+	// 从 product 表获取默认成本参数，自动计算成本字段
+	if sku.ProductID > 0 {
+		products, _ := h.ProductDao.GetAll(r.Context())
+		for _, p := range products {
+			if p.ProductID == sku.ProductID {
+				// 仅在前端未传值（为0）时自动计算，保留手动填入的值
+				if b.ProductCost == 0 { b.ProductCost = float64(b.OrderItemsCount) * p.DefaultCost }
+				if b.ShippingFee == 0 { b.ShippingFee = float64(b.OrderCount) * p.DefaultShippingCost }
+				if b.ServiceFee == 0 { b.ServiceFee = b.SalesAmount * p.DefaultServiceFeeRate }
+				if b.TaxFee == 0 { b.TaxFee = b.SalesAmount * p.DefaultTaxRate }
+				if b.FreightInsurance == 0 { b.FreightInsurance = float64(b.OrderCount) * p.DefaultFreightInsurance }
+				if b.ExchangeCost == 0 { b.ExchangeCost = float64(b.ExchangeCount) * p.DefaultExchangeCost }
+				// 退货成本 = 退货数量 × (0.958 × 销售额 / 订单量 - 商品默认成本)
+			if b.ReturnCost == 0 && b.OrderCount > 0 {
+				b.ReturnCost = float64(b.ReturnCount) * (0.958*b.SalesAmount/float64(b.OrderCount) - p.DefaultCost)
+			}
+				if b.FillOrderCost == 0 { b.FillOrderCost = float64(b.FillOrderCount) * p.DefaultFillOrderCost }
+				break
+			}
+		}
+	}
+
+	// 推广费合计自动计算
+	b.PromotionTotal = b.PromotionAlliance + b.PromotionAuto + b.PromotionJDUnion + b.PromotionSearch + b.PromotionRecommend
+
+	// 最终利润自动计算
+	c := b.ProductCost + b.ShippingFee + b.ServiceFee + b.TaxFee + b.FreightInsurance + b.ReturnCost + b.ExchangeCost + b.FillOrderCost
 	b.FinalProfit = b.RealSalesAmount - c - b.PromotionTotal + b.FillOrderAmount
+
 	h.DailyProfitDao.Save(r.Context(), &b)
 	writeJSON(w,200,map[string]interface{}{"ok":true,"profit":b.FinalProfit})
 }

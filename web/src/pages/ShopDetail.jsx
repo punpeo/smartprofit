@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, DollarSign, Package, AlertCircle, Megaphone, Wrench, Wallet, Plus, Upload, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Store } from 'lucide-react'
 import { api } from '../api'
 import { SKUModal } from '../components/SKUModal'
+import { ProfitEditor } from '../components/ProfitEditor'
 import { PageBackground } from '../components/PageBackground'
+import { parseExcelFile } from '../components/ExcelTools'
 
+const todayStr = new Date().toISOString().slice(0, 10)
 const card = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const row = { hidden: { opacity: 0, x: -6 }, show: { opacity: 1, x: 0, transition: { duration: 0.2 } } }
 
@@ -53,25 +56,32 @@ export function ShopDetail() {
   const [skus, setSkus] = useState([])
   const [shopName, setShopName] = useState('')
   const [page, setPage] = useState(1)
-  const [modalSku, setModalSku] = useState(null)
+  const [editSku, setEditSku] = useState(null)
+  const [editorMode, setEditorMode] = useState('new')
+  const [showProfitEditor, setShowProfitEditor] = useState(false)
   const [timeRange, setTimeRange] = useState('today')
   const [dateStart, setDateStart] = useState(getDateRange('today').start)
   const [dateEnd, setDateEnd] = useState(getDateRange('today').end)
   const [loading, setLoading] = useState(true)
+  const fileRef = useRef(null)
   const pageSize = 10
 
+  const [baseSkus, setBaseSkus] = useState([]) // SKU 基础列表（用于新增记录）
+
   useEffect(() => { load() }, [id, dateStart, dateEnd])
+  useEffect(() => { api.fetchSKUBase(id).then(d => setBaseSkus(d)) }, [id])
 
   async function load() {
     setLoading(true)
-    const [shops, s, sk] = await Promise.all([
+    const [shops, s, skData] = await Promise.all([
       api.fetchShops(),
-      api.fetchSummary(id),
-      api.fetchSKUs(id),
+      fetch(`/api/shops/${id}/summary?start=${dateStart}&end=${dateEnd}`).then(r => r.json()).catch(() => ({})),
+      fetch(`/api/shops/${id}/skus?start=${dateStart}&end=${dateEnd}&page=1&page_size=100`).then(r => r.json()).catch(() => ({ items: [] })),
     ])
+    const sk = skData?.items || skData || []
     const shop = shops.find(sh => sh.shop_id === Number(id))
     setShopName(shop?.shop_name || `店铺 #${id}`)
-    setSummary(s); setSkus(sk); setPage(1); setLoading(false)
+    setSummary(s || {}); setSkus(Array.isArray(sk) ? sk : []); setPage(1); setLoading(false)
   }
 
   function handleTimeRange(range) {
@@ -86,6 +96,50 @@ export function ShopDetail() {
   function handleSave(updated) {
     setSkus(prev => prev.map(s => s.sku_code === updated.sku_code ? { ...s, ...updated } : s))
     setModalSku(null)
+    load() // 刷新汇总卡片
+  }
+
+  async function handleImport() {
+    const file = fileRef.current?.files?.[0]
+    if (!file) return
+    try {
+      const rows = await parseExcelFile(file)
+      let count = 0
+      for (const r of rows) {
+        try {
+          const code = r['SKU编码'] || r.sku_code
+          if (!code) continue
+          const promoTotal = (parseFloat(r['全站营销']||r.promotion_alliance)||0)+(parseFloat(r['智能投放']||r.promotion_auto)||0)+(parseFloat(r['京东联盟']||r.promotion_jd_union)||0)+(parseFloat(r['搜索快车']||r.promotion_search)||0)+(parseFloat(r['推荐广告']||r.promotion_recommend)||0)
+          await api.saveSKU(String(code), {
+            sales_amount: parseFloat(r['销售额']||r.sales_amount)||0,
+            order_count: parseInt(r['订单量']||r.order_count)||0,
+            order_items_count: parseInt(r['订单件数']||r.order_items_count)||0,
+            real_sales_amount: parseFloat(r['真实销售额']||r.real_sales_amount)||0,
+            real_order_count: parseInt(r['真实订单量']||r.real_order_count)||0,
+            fill_order_amount: parseFloat(r['补单金额']||r.fill_order_amount)||0,
+            fill_order_count: parseInt(r['补单数量']||r.fill_order_count)||0,
+            fill_order_cost: parseFloat(r['补单成本']||r.fill_order_cost)||0,
+            product_cost: parseFloat(r['商品成本']||r.product_cost)||0,
+            shipping_fee: parseFloat(r['运费']||r.shipping_fee)||0,
+            service_fee: parseFloat(r['交易服务费']||r.service_fee)||0,
+            tax_fee: parseFloat(r['交易税费']||r.tax_fee)||0,
+            freight_insurance: parseFloat(r['运费险']||r.freight_insurance)||0,
+            return_count: parseInt(r['退货量']||r.return_count)||0, return_cost: parseFloat(r['退货成本']||r.return_cost)||0,
+            exchange_count: parseInt(r['换货量']||r.exchange_count)||0, exchange_cost: parseFloat(r['换货成本']||r.exchange_cost)||0,
+            promotion_alliance: parseFloat(r['全站营销']||r.promotion_alliance)||0,
+            promotion_auto: parseFloat(r['智能投放']||r.promotion_auto)||0,
+            promotion_jd_union: parseFloat(r['京东联盟']||r.promotion_jd_union)||0,
+            promotion_search: parseFloat(r['搜索快车']||r.promotion_search)||0,
+            promotion_recommend: parseFloat(r['推荐广告']||r.promotion_recommend)||0,
+            promotion_total: promoTotal, record_date: '',
+          })
+          count++
+        } catch {}
+      }
+      if (count > 0) { alert(`已导入 ${count} 条记录`); load() }
+      else alert('未识别到有效数据')
+    } catch { alert('文件解析失败') }
+    fileRef.current.value = ''
   }
 
   if (!summary) return <LoadingSkeleton />
@@ -95,6 +149,7 @@ export function ShopDetail() {
   return (
     <div className="relative h-screen bg-[#0a0a0f] flex flex-col overflow-hidden">
       <PageBackground overlay />
+      <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImport} className="hidden" />
 
       {/* ── Nav ── */}
       <nav className="relative z-10 shrink-0 glass border-b border-white/[0.07]">
@@ -110,10 +165,12 @@ export function ShopDetail() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button onClick={() => setModalSku(skus[0])} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-black text-sm font-medium hover:bg-white/90 transition-all active:scale-95">
+            <button onClick={() => setShowProfitEditor(true)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-black text-sm font-medium hover:bg-white/90 transition-all active:scale-95">
               <Plus size={14} /> 新增记录
             </button>
-            <button className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-white/[0.12] text-sm text-white/75 hover:border-white/15 hover:text-white transition-all">
+            <button onClick={() => fileRef.current?.click()}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-white/[0.12] text-sm text-white/75 hover:border-white/15 hover:text-white transition-all">
               <Upload size={13} /> 批量导入
             </button>
           </div>
@@ -211,7 +268,7 @@ export function ShopDetail() {
                             ¥ {pf.toLocaleString()}
                           </td>
                           <td className="py-3 pl-4 pr-6">
-                            <button onClick={() => setModalSku(s)}
+                            <button onClick={() => { setEditorMode('edit'); setEditSku(s); setShowProfitEditor(true) }}
                               className="px-3 py-1.5 rounded-full border border-white/[0.09] text-xs text-blue-400 hover:text-blue-300 hover:border-blue-400/20 transition-all">编辑</button>
                           </td>
                         </motion.tr>
@@ -256,7 +313,12 @@ export function ShopDetail() {
       </div>
 
       <AnimatePresence>
-        {modalSku && <SKUModal sku={modalSku} onClose={() => setModalSku(null)} onSave={handleSave} />}
+        {showProfitEditor && (
+          <ProfitEditor shopId={id} baseSkus={baseSkus} recordDate={dateEnd || todayStr}
+            mode={editorMode} editSku={editSku}
+            onClose={() => { setShowProfitEditor(false); setEditSku(null) }}
+            onSaved={() => { load(); setShowProfitEditor(false); setEditSku(null) }} />
+        )}
       </AnimatePresence>
     </div>
   )

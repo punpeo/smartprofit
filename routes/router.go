@@ -28,6 +28,7 @@ func Setup(h *handler.Handler) http.Handler {
 	mux.HandleFunc("POST /api/skus", h.CreateSKU)
 	mux.HandleFunc("PUT /api/skus/{code}", h.UpdateSKU)
 	mux.HandleFunc("DELETE /api/skus/{code}", h.DeleteSKU)
+	mux.HandleFunc("GET /api/skus/{code}/daily", h.GetSKUDaily)
 	mux.HandleFunc("POST /api/skus/{code}/save", h.SaveSKU)
 
 	staticFS := http.FileServer(http.Dir("web"))

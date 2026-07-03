@@ -24,8 +24,8 @@ INSERT INTO daily_profit_logs (
     fill_order_cost, product_cost, shipping_fee, service_fee, tax_fee,
     freight_insurance, return_count, return_cost, exchange_count, exchange_cost,
     promotion_alliance, promotion_auto, promotion_jd_union,
-    promotion_search, promotion_recommend, final_profit, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','+8 hours'))
+    promotion_search, promotion_recommend, promotion_total, final_profit, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','+8 hours'))
 ON CONFLICT(sku_id, record_date) DO UPDATE SET
     sales_amount = excluded.sales_amount,
     order_count = excluded.order_count,
@@ -49,6 +49,7 @@ ON CONFLICT(sku_id, record_date) DO UPDATE SET
     promotion_jd_union = excluded.promotion_jd_union,
     promotion_search = excluded.promotion_search,
     promotion_recommend = excluded.promotion_recommend,
+    promotion_total = excluded.promotion_total,
     final_profit = excluded.final_profit,
     updated_at = datetime('now','+8 hours')
 `
@@ -60,7 +61,7 @@ func (d *DailyProfitDao) Save(ctx context.Context, log *model.DailyProfitLog) er
 		log.FillOrderCost, log.ProductCost, log.ShippingFee, log.ServiceFee, log.TaxFee,
 		log.FreightInsurance, log.ReturnCount, log.ReturnCost, log.ExchangeCount, log.ExchangeCost,
 		log.PromotionAlliance, log.PromotionAuto, log.PromotionJDUnion,
-		log.PromotionSearch, log.PromotionRecommend, log.FinalProfit,
+		log.PromotionSearch, log.PromotionRecommend, log.PromotionTotal, log.FinalProfit,
 	)
 	return err
 }
@@ -109,10 +110,11 @@ func (d *DailyProfitDao) GetShopSummary(ctx context.Context, shopID int, startDa
 
 const listByShopAndDateSQL = `
 SELECT
-    s.sku_code, s.product_name,
+    s.sku_code, COALESCE(p.product_name, '') as product_name,
     d.sales_amount, d.order_count, d.promotion_total, d.product_cost, d.final_profit
 FROM daily_profit_logs d
 JOIN skus s ON d.sku_id = s.sku_id
+LEFT JOIN products p ON s.product_id = p.product_id
 WHERE s.shop_id = ? AND d.record_date BETWEEN ? AND ?
 ORDER BY d.final_profit DESC
 LIMIT ? OFFSET ?
@@ -218,4 +220,30 @@ func (d *DailyProfitDao) QueryAll(ctx context.Context) ([]QueryAllResult, error)
 		r = append(r, q)
 	}
 	return r, nil
+}
+
+// GetBySKUAndDate 获取指定 SKU 和日期的利润数据
+func (d *DailyProfitDao) GetBySKUAndDate(ctx context.Context, skuCode, recordDate string) (*model.DailyProfitLog, error) {
+	var log model.DailyProfitLog
+	err := d.db.QueryRowContext(ctx, `SELECT d.log_id, d.sku_id, d.record_date,
+		d.sales_amount, d.order_count, d.order_items_count,
+		d.real_sales_amount, d.real_order_count,
+		d.fill_order_amount, d.fill_order_count, d.fill_order_cost,
+		d.product_cost, d.shipping_fee, d.service_fee, d.tax_fee, d.freight_insurance,
+		d.return_count, d.return_cost, d.exchange_count, d.exchange_cost,
+		d.promotion_alliance, d.promotion_auto, d.promotion_jd_union,
+		d.promotion_search, d.promotion_recommend, d.promotion_total, d.final_profit
+		FROM daily_profit_logs d JOIN skus s ON d.sku_id=s.sku_id
+		WHERE s.sku_code=? AND d.record_date=?`, skuCode, recordDate,
+	).Scan(&log.LogID, &log.SkuID, &log.RecordDate,
+		&log.SalesAmount, &log.OrderCount, &log.OrderItemsCount,
+		&log.RealSalesAmount, &log.RealOrderCount,
+		&log.FillOrderAmount, &log.FillOrderCount, &log.FillOrderCost,
+		&log.ProductCost, &log.ShippingFee, &log.ServiceFee, &log.TaxFee, &log.FreightInsurance,
+		&log.ReturnCount, &log.ReturnCost, &log.ExchangeCount, &log.ExchangeCost,
+		&log.PromotionAlliance, &log.PromotionAuto, &log.PromotionJDUnion,
+		&log.PromotionSearch, &log.PromotionRecommend, &log.PromotionTotal, &log.FinalProfit,
+	)
+	if err != nil { return nil, err }
+	return &log, nil
 }

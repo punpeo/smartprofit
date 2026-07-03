@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { FileText, Search, Trash, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Calendar } from 'lucide-react'
 import { api } from '../../api'
 import { ImportBar } from '../../components/ExcelTools'
+import { useDebounce } from '../../hooks/useDebounce'
 
 const TEMPLATE = [['SKU编码', '商品名称', '销售额', '订单量', '订单件数', '真实销售额', '真实订单量', '补单金额', '补单数量', '补单成本', '商品成本', '运费', '交易服务费', '交易税费', '运费险', '退货量', '退货成本', '换货量', '换货成本', '全站营销', '智能投放', '京东联盟', '搜索快车', '推荐广告']]
 
@@ -34,7 +35,8 @@ export function DailyRecords() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const pageSize = 10
-  const ROW_H = 48 // 每行固定高度 px
+  const ROW_H = 48
+  const debouncedSearch = useDebounce(search, 200) // 每行固定高度 px
 
   useEffect(() => { api.fetchShops().then(setShops) }, [])
 
@@ -107,12 +109,12 @@ export function DailyRecords() {
   // Filter + Paginate
   const filtered = useMemo(() => {
     let list = records
-    if (search) {
-      const s = search.toLowerCase()
+    if (debouncedSearch) {
+      const s = debouncedSearch.toLowerCase()
       list = list.filter(r => r.sku_code?.toLowerCase().includes(s) || r.product_name?.toLowerCase().includes(s))
     }
     return list
-  }, [records, search])
+  }, [records, debouncedSearch])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize)

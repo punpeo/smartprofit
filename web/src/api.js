@@ -22,12 +22,12 @@ export const api = {
     const q = shopId ? `?shop_id=${shopId}` : ''
     const d = await request(`/skus${q}`)
     return d.items || d || []
-  }, MOCK_SKUS),
+  }, []), // 不回退假数据 — SKU 为空就是真的空
   fetchSKUs:      (id) => withFallback(async () => {
     const d = await request(`/shops/${id}/skus?page=1&page_size=100`);
     const items = d.items || d;
-    if (!Array.isArray(items) || items.length === 0) throw new Error('empty');
-    return items;
+    if (!Array.isArray(items)) throw new Error('invalid');
+    return items; // 空数组是合法的（无利润记录）
   }, MOCK_SKUS),
 
   // Write

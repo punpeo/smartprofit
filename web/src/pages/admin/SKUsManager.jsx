@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import { useEffect, useState, useMemo } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Trash2, Save, X, Package, Edit3, Search, Trash, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api } from '../../api'
 import { ImportBar } from '../../components/ExcelTools'
+import { useDebounce } from '../../hooks/useDebounce'
 
 const TEMPLATE = [['SKU编码', '商品ID', '所属店铺ID']]
 const row = { hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0 } }
@@ -15,7 +16,7 @@ export function SKUsManager() {
   const [search, setSearch] = useState('')
   const [filterShopId, setFilterShopId] = useState('')
   const [page, setPage] = useState(1)
-  // 筛选变化时重置页码
+  const debouncedSearch = useDebounce(search, 200)
   function setFilter(val) { setFilterShopId(val); setPage(1) }
   function setSearchVal(val) { setSearch(val); setPage(1) }
   const pageSize = 10
@@ -105,11 +106,11 @@ export function SKUsManager() {
     setSkus([])
   }
 
-  const filtered = skus.filter(s => {
-    const matchSearch = !search || s.sku_code.includes(search) || s.product_name.includes(search)
+  const filtered = useMemo(() => skus.filter(s => {
+    const matchSearch = !debouncedSearch || s.sku_code.toLowerCase().includes(debouncedSearch.toLowerCase()) || (s.product_name || '').toLowerCase().includes(debouncedSearch.toLowerCase())
     const matchShop = !filterShopId || s.shop_id === Number(filterShopId)
     return matchSearch && matchShop
-  })
+  }), [skus, debouncedSearch, filterShopId])
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize)
   const ROW_H = 48

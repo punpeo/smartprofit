@@ -49,3 +49,80 @@ select option {
   background: #1a1a24;
   color: #eeeef2;
 }
+
+/* ═══════════════════════════════════════════
+   Interaction & Motion Design Tokens
+   ═══════════════════════════════════════════ */
+
+/* ── Global hover/active/focus-visible ── */
+.interactive {
+  transition: all 150ms ease-out;
+  cursor: pointer;
+}
+.interactive:hover { filter: brightness(1.1); }
+.interactive:active { transform: scale(0.97); }
+
+/* 所有按钮统一 active */
+button:not(:disabled) {
+  transition: transform 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms, background 150ms;
+}
+button:active:not(:disabled) { transform: scale(0.96); }
+
+/* 所有可聚焦元素 focus-visible 统一蓝环 */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid rgba(59,130,246,0.5);
+  outline-offset: 2px;
+}
+
+/* ── 输入框焦点过渡 ── */
+input, select, textarea {
+  transition: border-color 150ms, box-shadow 150ms;
+}
+
+/* ── 表格行 hover 过渡 ── */
+tr { transition: background-color 120ms; }
+
+/* ── 卡片 hover 微升 ── */
+.card-hover {
+  transition: transform 200ms ease-out, box-shadow 200ms;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+/* ── 淡入淡出工具类 ── */
+.fade-in {
+  animation: fadeIn 250ms ease-out;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.fade-out {
+  animation: fadeOut 150ms ease-in forwards;
+}
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* ── 表单校验提示 ── */
+.form-hint {
+  animation: hintIn 200ms ease-out;
+  font-size: 11px;
+}
+@keyframes hintIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── prefers-reduced-motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

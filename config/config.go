@@ -25,7 +25,7 @@ type DatabaseConfig struct {
 func Load() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Port:      env("SERVER_PORT", ":8080"),
+			Port:      env("SERVER_PORT", ":8081"),
 			StaticDir: env("STATIC_DIR", "static"),
 		},
 		Database: DatabaseConfig{

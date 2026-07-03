@@ -1,21 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, Trash2, Save, X, Boxes, Edit3, Trash, Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api } from '../../api'
 import { ImportBar } from '../../components/ExcelTools'
+import { useDebounce } from '../../hooks/useDebounce'
 
-const TEMPLATE = [['商品名称','分类','默认成本','默认运费','服务费率','税费率','运费险','换货成本','退货成本','补单成本']]
+const TEMPLATE = [['商品名称','分类','默认成本(元)','默认运费(元)','服务费率(如0.066=6.6%)','税费率(如0.003=0.3%)','运费险(元)','换货成本(元)','退货成本(元)','补单成本(元)']]
 const row = { hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0 } }
 
+// [字段名, 标签, 占位提示, step精度]
 const COST_FIELDS = [
-  ['default_cost','默认成本','元/件'],
-  ['default_shipping_cost','默认运费','元/单'],
-  ['default_service_fee_rate','服务费率','如 0.01'],
-  ['default_tax_rate','税费率','如 0.005'],
-  ['default_freight_insurance','运费险','元/单'],
-  ['default_exchange_cost','换货成本','元/件'],
-  ['default_return_cost','退货成本','元/件'],
-  ['default_fill_order_cost','补单成本','元/件'],
+  ['default_cost','默认成本','元/件','0.01'],
+  ['default_shipping_cost','默认运费','元/单','0.01'],
+  ['default_service_fee_rate','服务费率','如 0.066','0.001'],   // 费率用千分位
+  ['default_tax_rate','税费率','如 0.003','0.001'],            // 费率用千分位
+  ['default_freight_insurance','运费险','元/单','0.01'],
+  ['default_exchange_cost','换货成本','元/件','0.01'],
+  ['default_return_cost','退货成本','元/件','0.01'],
+  ['default_fill_order_cost','补单成本','元/件','0.01'],
 ]
 
 const defaultCosts = Object.fromEntries(COST_FIELDS.map(([k]) => [k, 0]))
@@ -27,15 +29,16 @@ export function ProductManager() {
   const [filterCat, setFilterCat] = useState('')
   const [page, setPage] = useState(1)
   const pageSize = 10
+  const debouncedSearch = useDebounce(search, 200)
 
   useEffect(() => { api.fetchProducts().then(setProducts) }, [])
 
   const categories = [...new Set(products.map(p => p.category).filter(Boolean))]
-  const filtered = products.filter(p => {
-    const m = !search || p.product_name.toLowerCase().includes(search.toLowerCase())
+  const filtered = useMemo(() => products.filter(p => {
+    const m = !debouncedSearch || p.product_name.toLowerCase().includes(debouncedSearch.toLowerCase())
     const c = !filterCat || p.category === filterCat
     return m && c
-  })
+  }), [products, debouncedSearch, filterCat])
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize)
 
@@ -92,7 +95,7 @@ export function ProductManager() {
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/[0.12] bg-white/[0.04]">
             <Search size={14} className="text-white/45" />
-            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="搜索商品..." className="bg-transparent outline-none text-sm text-white/75 placeholder:text-white/40 w-32" />
+            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="搜索商品..." className={`bg-transparent outline-none text-sm text-white/75 placeholder:text-white/40 w-32 ${search !== debouncedSearch ? 'opacity-60' : ''}`} />
           </div>
           <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setPage(1) }}
             className="px-3 py-2 rounded-lg border border-white/[0.12] bg-[#1a1a24] text-sm text-white/75 outline-none focus:border-blue-400/30">
@@ -133,10 +136,10 @@ export function ProductManager() {
           </div>
           <p className="text-[11px] text-white/30 mb-3 px-1">默认成本参数（SKU 自动计算时使用）</p>
           <div className="grid grid-cols-4 gap-3 mb-4">
-            {COST_FIELDS.map(([key, label, placeholder]) => (
+            {COST_FIELDS.map(([key, label, placeholder, step]) => (
               <label key={key} className="flex flex-col gap-1">
                 <span className="text-[11px] text-white/60">{label}</span>
-                <input type="number" step="any" value={editing[key] ?? 0}
+                <input type="number" step={step} value={editing[key] ?? 0}
                   onChange={e => setEditing({ ...editing, [key]: parseFloat(e.target.value) || 0 })}
                   className="px-3 py-2 rounded-lg border border-white/[0.12] bg-white/[0.04] text-sm text-white/85 outline-none focus:border-blue-400/30" placeholder={placeholder} />
               </label>
@@ -165,8 +168,8 @@ export function ProductManager() {
                 </div>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[11px] text-white/40">
                   <span>运费 ¥{p.default_shipping_cost||0}</span>
-                  <span>费率 {(p.default_service_fee_rate||0)*100}%</span>
-                  <span>税率 {(p.default_tax_rate||0)*100}%</span>
+                  <span>费率 {((p.default_service_fee_rate||0)*100).toFixed(1)}%</span>
+                  <span>税率 {((p.default_tax_rate||0)*100).toFixed(2)}%</span>
                   <span>运费险 ¥{p.default_freight_insurance||0}</span>
                 </div>
               </div>

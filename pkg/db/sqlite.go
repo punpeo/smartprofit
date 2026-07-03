@@ -53,14 +53,28 @@ func createTables(db *sql.DB) error {
 		created_at TEXT NOT NULL DEFAULT (datetime('now','+8 hours'))
 	);
 
+	CREATE TABLE IF NOT EXISTS products (
+		product_id                INTEGER PRIMARY KEY AUTOINCREMENT,
+		product_name              TEXT NOT NULL,
+		category                  TEXT NOT NULL DEFAULT '',
+		image_url                 TEXT NOT NULL DEFAULT '',
+		default_cost              REAL NOT NULL DEFAULT 0,
+		default_shipping_cost     REAL NOT NULL DEFAULT 0,
+		default_service_fee_rate  REAL NOT NULL DEFAULT 0,
+		default_tax_rate          REAL NOT NULL DEFAULT 0,
+		default_freight_insurance REAL NOT NULL DEFAULT 0,
+		default_exchange_cost     REAL NOT NULL DEFAULT 0,
+		default_return_cost       REAL NOT NULL DEFAULT 0,
+		default_fill_order_cost   REAL NOT NULL DEFAULT 0,
+		created_at                TEXT NOT NULL DEFAULT (datetime('now','+8 hours'))
+	);
+
 	CREATE TABLE IF NOT EXISTS skus (
-		sku_id       INTEGER PRIMARY KEY AUTOINCREMENT,
-		shop_id      INTEGER NOT NULL REFERENCES shops(shop_id),
-		sku_code     TEXT NOT NULL UNIQUE,
-		product_name TEXT NOT NULL DEFAULT '',
-		default_cost REAL NOT NULL DEFAULT 0,
-		category     TEXT NOT NULL DEFAULT '',
-		created_at   TEXT NOT NULL DEFAULT (datetime('now','+8 hours'))
+		sku_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+		shop_id    INTEGER NOT NULL REFERENCES shops(shop_id),
+		product_id INTEGER NOT NULL REFERENCES products(product_id),
+		sku_code   TEXT NOT NULL UNIQUE,
+		created_at TEXT NOT NULL DEFAULT (datetime('now','+8 hours'))
 	);
 
 	CREATE TABLE IF NOT EXISTS daily_profit_logs (

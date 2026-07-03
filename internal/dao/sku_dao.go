@@ -14,37 +14,27 @@ func NewSkuDao(db *sql.DB) *SkuDao {
 	return &SkuDao{db: db}
 }
 
-const getSkusByShopIDSQL = `SELECT sku_id, shop_id, sku_code, product_name, default_cost, category, created_at FROM skus WHERE shop_id = ? ORDER BY created_at DESC`
+const getSkusByShopIDSQL = `SELECT sk.sku_id, sk.shop_id, sk.product_id, sk.sku_code, sk.created_at, COALESCE(p.product_name,''), COALESCE(p.category,''), COALESCE(p.default_cost,0), COALESCE(sh.shop_name,'') FROM skus sk LEFT JOIN products p ON sk.product_id=p.product_id LEFT JOIN shops sh ON sk.shop_id=sh.shop_id WHERE sk.shop_id = ? ORDER BY sk.created_at DESC`
 
 func (d *SkuDao) GetByShopID(ctx context.Context, shopID int64) ([]*model.SKU, error) {
 	rows, err := d.db.QueryContext(ctx, getSkusByShopIDSQL, shopID)
-	if err != nil {
-		return nil, err
-	}
+	if err != nil { return nil, err }
 	defer rows.Close()
-
 	var skus []*model.SKU
 	for rows.Next() {
 		var sku model.SKU
-		err := rows.Scan(
-			&sku.SkuID, &sku.ShopID, &sku.SkuCode,
-			&sku.ProductName, &sku.DefaultCost, &sku.Category, &sku.CreatedAt,
-		)
-		if err != nil {
-			return nil, err
-		}
+		if err := rows.Scan(&sku.SkuID, &sku.ShopID, &sku.ProductID, &sku.SkuCode, &sku.CreatedAt, &sku.ProductName, &sku.Category, &sku.DefaultCost, &sku.ShopName); err != nil { return nil, err }
 		skus = append(skus, &sku)
 	}
 	return skus, nil
 }
 
-const getSkuByCodeSQL = `SELECT sku_id, shop_id, sku_code, product_name, default_cost FROM skus WHERE sku_code = ?`
+const getSkuByCodeSQL = `SELECT sku_id, shop_id, product_id, sku_code FROM skus WHERE sku_code = ?`
 
 func (d *SkuDao) GetByCode(ctx context.Context, skuCode string) (*model.SKU, error) {
 	var sku model.SKU
 	err := d.db.QueryRowContext(ctx, getSkuByCodeSQL, skuCode).Scan(
-		&sku.SkuID, &sku.ShopID, &sku.SkuCode,
-		&sku.ProductName, &sku.DefaultCost,
+		&sku.SkuID, &sku.ShopID, &sku.ProductID, &sku.SkuCode,
 	)
 	if err != nil {
 		return nil, err
@@ -52,11 +42,11 @@ func (d *SkuDao) GetByCode(ctx context.Context, skuCode string) (*model.SKU, err
 	return &sku, nil
 }
 
-const createSkuSQL = `INSERT INTO skus (shop_id, sku_code, product_name, default_cost, category) VALUES (?, ?, ?, ?, ?)`
+const createSkuSQL = `INSERT INTO skus (shop_id, product_id, sku_code) VALUES (?, ?, ?)`
 
 func (d *SkuDao) Create(ctx context.Context, sku *model.SKU) (int64, error) {
 	result, err := d.db.ExecContext(ctx, createSkuSQL,
-		sku.ShopID, sku.SkuCode, sku.ProductName, sku.DefaultCost, sku.Category,
+		sku.ShopID, sku.ProductID, sku.SkuCode,
 	)
 	if err != nil {
 		return 0, err
