@@ -62,6 +62,7 @@ func createTables(db *sql.DB) error {
 		default_shipping_cost     REAL NOT NULL DEFAULT 0,
 		default_service_fee_rate  REAL NOT NULL DEFAULT 0,
 		default_tax_rate          REAL NOT NULL DEFAULT 0,
+	platform_commission_rate  REAL NOT NULL DEFAULT 0,
 		default_freight_insurance REAL NOT NULL DEFAULT 0,
 		default_exchange_cost     REAL NOT NULL DEFAULT 0,
 		default_return_cost       REAL NOT NULL DEFAULT 0,
@@ -122,8 +123,13 @@ func createTables(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_dpl_sku_date ON daily_profit_logs(sku_id, record_date);
 	`
 	_, err := db.Exec(schema)
-	if err != nil {
-		return err
+	if err != nil { return err }
+
+	// 迁移：为旧数据库添加新增列（忽略已存在错误）
+	for _, m := range []string{
+		"ALTER TABLE products ADD COLUMN platform_commission_rate REAL NOT NULL DEFAULT 0",
+	} {
+		db.Exec(m)
 	}
 
 	// seed(db) // 演示数据已关闭，如需恢复取消此行注释

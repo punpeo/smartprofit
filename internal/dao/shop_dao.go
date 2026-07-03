@@ -12,17 +12,16 @@ func NewShopDao(db *sql.DB) *ShopDao { return &ShopDao{db: db} }
 
 const getAllShopsSQL = `
 SELECT s.shop_id, s.shop_name, s.platform,
-    COALESCE(today.total_profit,0) as today_profit,
-    COALESCE(total.total_profit,0) as total_profit,
-    CASE WHEN COALESCE(today.total_profit,0)>=0 THEN '盈利' ELSE '亏损' END as status,
-    CASE WHEN COALESCE(total.total_sales,0)>0 THEN ROUND(COALESCE(total.total_profit,0)*100.0/COALESCE(total.total_sales,1),1) ELSE 0 END as profit_rate
+    COALESCE(period.total_profit,0) as today_profit,
+    COALESCE(period.total_profit,0) as total_profit,
+    CASE WHEN COALESCE(period.total_profit,0)>=0 THEN '盈利' ELSE '亏损' END as status,
+    CASE WHEN COALESCE(period.total_sales,0)>0 THEN ROUND(COALESCE(period.total_profit,0)*100.0/COALESCE(period.total_sales,1),1) ELSE 0 END as profit_rate
 FROM shops s
-LEFT JOIN (SELECT s2.shop_id, SUM(d.final_profit) as total_profit FROM daily_profit_logs d JOIN skus s2 ON d.sku_id=s2.sku_id WHERE d.record_date=date('now') GROUP BY s2.shop_id) today ON s.shop_id=today.shop_id
-LEFT JOIN (SELECT s2.shop_id, SUM(d.final_profit) as total_profit, SUM(d.real_sales_amount) as total_sales FROM daily_profit_logs d JOIN skus s2 ON d.sku_id=s2.sku_id GROUP BY s2.shop_id) total ON s.shop_id=total.shop_id
+LEFT JOIN (SELECT s2.shop_id, SUM(d.final_profit) as total_profit, SUM(d.real_sales_amount) as total_sales FROM daily_profit_logs d JOIN skus s2 ON d.sku_id=s2.sku_id WHERE d.record_date BETWEEN ? AND ? GROUP BY s2.shop_id) period ON s.shop_id=period.shop_id
 ORDER BY today_profit DESC`
 
-func (d *ShopDao) GetAll(ctx context.Context) ([]*model.ShopSummary, error) {
-	rows, err := d.db.QueryContext(ctx, getAllShopsSQL)
+func (d *ShopDao) GetAll(ctx context.Context, startDate, endDate string) ([]*model.ShopSummary, error) {
+	rows, err := d.db.QueryContext(ctx, getAllShopsSQL, startDate, endDate)
 	if err != nil { return nil, err }
 	defer rows.Close()
 	var shops []*model.ShopSummary

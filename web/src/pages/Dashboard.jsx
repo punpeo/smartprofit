@@ -70,8 +70,11 @@ export function Dashboard({ onSelectShop }) {
   useEffect(() => { load() }, [dateStart, dateEnd])
 
   async function load() {
-    const [s, k] = await Promise.all([api.fetchShops(), api.fetchKPIs()])
-    setShops(s); setKpis(k)
+    const [s, k] = await Promise.all([
+      fetch(`/api/shops?start=${dateStart}&end=${dateEnd}`).then(r => r.json()),
+      fetch(`/api/dashboard/kpis?start=${dateStart}&end=${dateEnd}`).then(r => r.json()),
+    ])
+    setShops(Array.isArray(s) ? s : []); setKpis(k)
   }
 
   function handleTimeRange(range) {

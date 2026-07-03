@@ -72,6 +72,9 @@ const getShopSummarySQL = `
 SELECT
     COALESCE(SUM(d.sales_amount), 0) as total_sales,
     COALESCE(SUM(d.order_count), 0) as total_orders,
+    COALESCE(SUM(d.real_sales_amount), 0) as total_real_sales,
+    COALESCE(SUM(d.real_order_count), 0) as total_real_orders,
+    COALESCE(SUM(d.order_items_count), 0) as total_order_items,
     COALESCE(SUM(d.fill_order_count), 0) as total_fill_count,
     COALESCE(SUM(d.fill_order_amount), 0) as total_fill_amount,
     COALESCE(SUM(d.promotion_total), 0) as total_promo,
@@ -86,6 +89,9 @@ WHERE s.shop_id = ?
 type ShopSummary struct {
 	TotalSales         float64 `json:"total_sales"`
 	TotalOrders        int     `json:"total_orders"`
+	TotalRealSales     float64 `json:"total_real_sales"`
+	TotalRealOrders    int     `json:"total_real_orders"`
+	TotalOrderItems    int     `json:"total_order_items"`
 	TotalFillCount     int     `json:"total_fill_count"`
 	TotalFillAmount    float64 `json:"total_fill_amount"`
 	TotalPromo         float64 `json:"total_promo"`
@@ -96,7 +102,8 @@ type ShopSummary struct {
 func (d *DailyProfitDao) GetShopSummary(ctx context.Context, shopID int, startDate, endDate string) (*ShopSummary, error) {
 	var summary ShopSummary
 	err := d.db.QueryRowContext(ctx, getShopSummarySQL, shopID, startDate, endDate).Scan(
-		&summary.TotalSales, &summary.TotalOrders, &summary.TotalFillCount,
+		&summary.TotalSales, &summary.TotalOrders, &summary.TotalRealSales, &summary.TotalRealOrders,
+		&summary.TotalOrderItems, &summary.TotalFillCount,
 		&summary.TotalFillAmount, &summary.TotalPromo, &summary.TotalAftersaleCost,
 		&summary.NetProfit,
 	)
@@ -209,8 +216,8 @@ type QueryAllResult struct {
 	PromotionTotal  float64
 }
 
-func (d *DailyProfitDao) QueryAll(ctx context.Context) ([]QueryAllResult, error) {
-	rows, err := d.db.QueryContext(ctx, "SELECT real_sales_amount, promotion_total FROM daily_profit_logs")
+func (d *DailyProfitDao) QueryAll(ctx context.Context, startDate, endDate string) ([]QueryAllResult, error) {
+	rows, err := d.db.QueryContext(ctx, "SELECT real_sales_amount, promotion_total FROM daily_profit_logs WHERE record_date BETWEEN ? AND ?", startDate, endDate)
 	if err != nil { return nil, err }
 	defer rows.Close()
 	var r []QueryAllResult

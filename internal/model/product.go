@@ -12,11 +12,12 @@ type Product struct {
 	CreatedAt   string  `db:"created_at" json:"created_at"`       // 创建时间
 
 	// 默认成本参数（用于自动计算 SKU 日利润）
-	DefaultShippingCost     float64 `db:"default_shipping_cost" json:"default_shipping_cost"`         // 默认运费（元/单）
-	DefaultServiceFeeRate   float64 `db:"default_service_fee_rate" json:"default_service_fee_rate"`   // 默认交易服务费率
-	DefaultTaxRate          float64 `db:"default_tax_rate" json:"default_tax_rate"`                   // 默认交易税费率
-	DefaultFreightInsurance float64 `db:"default_freight_insurance" json:"default_freight_insurance"` // 默认运费险（元/单）
-	DefaultExchangeCost     float64 `db:"default_exchange_cost" json:"default_exchange_cost"`         // 默认换货成本（元/件）
-	DefaultReturnCost       float64 `db:"default_return_cost" json:"default_return_cost"`             // 默认退货成本（元/件）
-	DefaultFillOrderCost    float64 `db:"default_fill_order_cost" json:"default_fill_order_cost"`     // 默认补单成本（元/件）
+	DefaultShippingCost      float64 `db:"default_shipping_cost" json:"default_shipping_cost"`             // 默认运费（元/单）
+	DefaultServiceFeeRate    float64 `db:"default_service_fee_rate" json:"default_service_fee_rate"`       // 默认交易服务费率
+	DefaultTaxRate           float64 `db:"default_tax_rate" json:"default_tax_rate"`                       // 默认交易税费率
+	PlatformCommissionRate   float64 `db:"platform_commission_rate" json:"platform_commission_rate"`       // 平台扣点费率（如 0.05 = 5%）
+	DefaultFreightInsurance  float64 `db:"default_freight_insurance" json:"default_freight_insurance"`     // 默认运费险（元/单）
+	DefaultExchangeCost      float64 `db:"default_exchange_cost" json:"default_exchange_cost"`             // 默认换货成本（元/件）
+	DefaultReturnCost        float64 `db:"default_return_cost" json:"default_return_cost"`                 // 默认退货成本（元/件）
+	DefaultFillOrderCost     float64 `db:"default_fill_order_cost" json:"default_fill_order_cost"`         // 默认补单成本（元/件）
 }

@@ -25,17 +25,21 @@ func today() string                                          { return time.Now()
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status":"ok"}) }
 
 func (h *Handler) DashboardKPIs(w http.ResponseWriter, r *http.Request) {
-	shops, _ := h.ShopDao.GetAll(r.Context())
+	st := r.URL.Query().Get("start"); if st == "" { st = today() }
+	ed := r.URL.Query().Get("end"); if ed == "" { ed = today() }
+	shops, _ := h.ShopDao.GetAll(r.Context(), st, ed)
 	var tp, ts, tpr float64
 	for _, s := range shops { tp += s.TotalProfit }
-	rows, _ := h.DailyProfitDao.QueryAll(r.Context())
-	for _, r := range rows { ts += r.RealSalesAmount; tpr += r.PromotionTotal }
+	rows, _ := h.DailyProfitDao.QueryAll(r.Context(), st, ed)
+	for _, r2 := range rows { ts += r2.RealSalesAmount; tpr += r2.PromotionTotal }
 	avg := 0.0; if ts > 0 { avg = tp / ts * 100 }
 	writeJSON(w, 200, map[string]float64{"total_profit":tp,"total_sales":ts,"total_promo":tpr,"avg_profit_rate":avg})
 }
 
 func (h *Handler) ListShops(w http.ResponseWriter, r *http.Request) {
-	shops, _ := h.ShopDao.GetAll(r.Context())
+	st := r.URL.Query().Get("start"); if st == "" { st = today() }
+	ed := r.URL.Query().Get("end"); if ed == "" { ed = today() }
+	shops, _ := h.ShopDao.GetAll(r.Context(), st, ed)
 	if shops == nil { shops = []*model.ShopSummary{} }
 	writeJSON(w, 200, shops)
 }
@@ -48,15 +52,14 @@ func (h *Handler) ShopSummary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]interface{}{
 		"total_sales":          s.TotalSales,
 		"total_orders":         s.TotalOrders,
+		"total_real_sales":     s.TotalRealSales,
+		"total_real_orders":    s.TotalRealOrders,
+		"total_order_items":    s.TotalOrderItems,
 		"total_fill_count":     s.TotalFillCount,
 		"total_fill_amount":    s.TotalFillAmount,
 		"total_promo":          s.TotalPromo,
 		"total_aftersale_cost": s.TotalAftersaleCost,
 		"net_profit":           s.NetProfit,
-		"total_real_sales":     s.TotalSales * 0.96,
-		"total_real_orders":    int(float64(s.TotalOrders) * 0.94),
-		"total_order_items":    s.TotalOrders + s.TotalFillCount,
-		"total_fill_cost":      0.0,
 	})
 }
 
@@ -180,9 +183,10 @@ func (h *Handler) SaveSKU(w http.ResponseWriter, r *http.Request) {
 				if b.TaxFee == 0 { b.TaxFee = b.SalesAmount * p.DefaultTaxRate }
 				if b.FreightInsurance == 0 { b.FreightInsurance = float64(b.OrderCount) * p.DefaultFreightInsurance }
 				if b.ExchangeCost == 0 { b.ExchangeCost = float64(b.ExchangeCount) * p.DefaultExchangeCost }
-				// 退货成本 = 退货数量 × (0.958 × 销售额 / 订单量 - 商品默认成本)
+				// 退货成本 = 销售额/订单量*退货量 - 商品默认成本*退货量 - 销售额/订单量*退货量*平台扣点费率
 			if b.ReturnCost == 0 && b.OrderCount > 0 {
-				b.ReturnCost = float64(b.ReturnCount) * (0.958*b.SalesAmount/float64(b.OrderCount) - p.DefaultCost)
+				unitPrice := b.SalesAmount / float64(b.OrderCount)
+				b.ReturnCost = float64(b.ReturnCount) * (unitPrice - p.DefaultCost - unitPrice*p.PlatformCommissionRate)
 			}
 				if b.FillOrderCost == 0 { b.FillOrderCost = float64(b.FillOrderCount) * p.DefaultFillOrderCost }
 				break

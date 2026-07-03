@@ -61,7 +61,7 @@ export function ProfitEditor({ shopId, baseSkus, recordDate, onClose, onSaved, m
       tax_fee: Math.round((f.sales_amount||0) * (p.default_tax_rate||0) * 100) / 100,
       freight_insurance: Math.round((f.order_count||0) * (p.default_freight_insurance||0) * 100) / 100,
       exchange_cost: Math.round((f.exchange_count||0) * (p.default_exchange_cost||0) * 100) / 100,
-      return_cost: Math.round((f.return_count||0) * ((0.958 * (f.sales_amount||0) / Math.max(1, f.order_count||1)) - (p.default_cost||0)) * 100) / 100,
+      return_cost: Math.round((f.return_count||0) * (((f.sales_amount||0) / Math.max(1, f.order_count||1)) - (p.default_cost||0) - ((f.sales_amount||0) / Math.max(1, f.order_count||1)) * (p.platform_commission_rate||0)) * 100) / 100,
       fill_order_cost: Math.round((f.fill_order_count||0) * (p.default_fill_order_cost||0) * 100) / 100,
     }))
   }, calcFields)
@@ -76,7 +76,7 @@ export function ProfitEditor({ shopId, baseSkus, recordDate, onClose, onSaved, m
   async function autoCalc() {
     if (!selected?.product_id) return
     try { const ps = await (await fetch('/api/products')).json(); setProductCache(ps); const p = (ps||[]).find(x => x.product_id === selected.product_id); if (!p) return
-      setForm(f => ({...f,product_cost:Math.round((f.order_items_count||f.order_count||0)*(p.default_cost||0)*100)/100,shipping_fee:Math.round((f.order_count||0)*(p.default_shipping_cost||0)*100)/100,service_fee:Math.round((f.sales_amount||0)*(p.default_service_fee_rate||0)*100)/100,tax_fee:Math.round((f.sales_amount||0)*(p.default_tax_rate||0)*100)/100,freight_insurance:Math.round((f.order_count||0)*(p.default_freight_insurance||0)*100)/100,exchange_cost:Math.round((f.exchange_count||0)*(p.default_exchange_cost||0)*100)/100,return_cost:Math.round((f.return_count||0)*((0.958 * (f.sales_amount||0) / Math.max(1, f.order_count||1)) - (p.default_cost||0))*100)/100,fill_order_cost:Math.round((f.fill_order_count||0)*(p.default_fill_order_cost||0)*100)/100})) } catch {}
+      setForm(f => ({...f,product_cost:Math.round((f.order_items_count||f.order_count||0)*(p.default_cost||0)*100)/100,shipping_fee:Math.round((f.order_count||0)*(p.default_shipping_cost||0)*100)/100,service_fee:Math.round((f.sales_amount||0)*(p.default_service_fee_rate||0)*100)/100,tax_fee:Math.round((f.sales_amount||0)*(p.default_tax_rate||0)*100)/100,freight_insurance:Math.round((f.order_count||0)*(p.default_freight_insurance||0)*100)/100,exchange_cost:Math.round((f.exchange_count||0)*(p.default_exchange_cost||0)*100)/100,return_cost:Math.round((f.return_count||0)*(((f.sales_amount||0) / Math.max(1, f.order_count||1)) - (p.default_cost||0) - ((f.sales_amount||0) / Math.max(1, f.order_count||1)) * (p.platform_commission_rate||0))*100)/100,fill_order_cost:Math.round((f.fill_order_count||0)*(p.default_fill_order_cost||0)*100)/100})) } catch {}
   }
 
   async function handleSave() {

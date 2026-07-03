@@ -14,6 +14,7 @@ const COST_FIELDS = [
   ['default_shipping_cost','默认运费','元/单','0.01'],
   ['default_service_fee_rate','服务费率','如 0.066','0.001'],   // 费率用千分位
   ['default_tax_rate','税费率','如 0.003','0.001'],            // 费率用千分位
+  ['platform_commission_rate','平台扣点','如 0.05','0.001'],
   ['default_freight_insurance','运费险','元/单','0.01'],
   ['default_exchange_cost','换货成本','元/件','0.01'],
   ['default_return_cost','退货成本','元/件','0.01'],
@@ -170,6 +171,7 @@ export function ProductManager() {
                   <span>运费 ¥{p.default_shipping_cost||0}</span>
                   <span>费率 {((p.default_service_fee_rate||0)*100).toFixed(1)}%</span>
                   <span>税率 {((p.default_tax_rate||0)*100).toFixed(2)}%</span>
+                  <span>扣点 {((p.platform_commission_rate||0)*100).toFixed(1)}%</span>
                   <span>运费险 ¥{p.default_freight_insurance||0}</span>
                 </div>
               </div>

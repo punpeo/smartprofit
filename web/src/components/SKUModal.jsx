@@ -90,7 +90,7 @@ export function SKUModal({ sku, onClose, onSave, mode = 'new', recordDate = toda
         tax_fee: Math.round((f.sales_amount || 0) * (product.default_tax_rate || 0) * 100) / 100,
         freight_insurance: Math.round((f.order_count || 0) * (product.default_freight_insurance || 0) * 100) / 100,
         exchange_cost: Math.round((f.exchange_count || 0) * (product.default_exchange_cost || 0) * 100) / 100,
-        return_cost: Math.round((f.return_count || 0) * (0.958 * (f.sales_amount || 0) / Math.max(1, f.order_count || 1) - (product.default_cost || 0)) * 100) / 100,
+        return_cost: Math.round((f.return_count || 0) * ((f.sales_amount || 0) / Math.max(1, f.order_count || 1) - (product.default_cost || 0) - (f.sales_amount || 0) / Math.max(1, f.order_count || 1) * (product.platform_commission_rate || 0)) * 100) / 100,
         fill_order_cost: Math.round((f.fill_order_count || 0) * (product.default_fill_order_cost || 0) * 100) / 100,
       }))
     } catch { }
