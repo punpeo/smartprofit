@@ -120,7 +120,141 @@ func createTables(db *sql.DB) error {
 		UNIQUE(sku_id, record_date)
 	);
 
+	CREATE TABLE IF NOT EXISTS daily_aftersale_logs (
+		id              INTEGER PRIMARY KEY AUTOINCREMENT,
+		shop_id         INTEGER NOT NULL DEFAULT 0,
+		sku_id          INTEGER NOT NULL,
+		record_date     TEXT NOT NULL,
+		return_total    INTEGER NOT NULL DEFAULT 0,
+		return_valid    INTEGER NOT NULL DEFAULT 0,
+		return_cancel   INTEGER NOT NULL DEFAULT 0,
+		exchange_total  INTEGER NOT NULL DEFAULT 0,
+		exchange_valid  INTEGER NOT NULL DEFAULT 0,
+		exchange_cancel INTEGER NOT NULL DEFAULT 0,
+		aftersale_total  INTEGER NOT NULL DEFAULT 0,
+		aftersale_cancel INTEGER NOT NULL DEFAULT 0,
+		operator_name   TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT (datetime('now','+8 hours')),
+		updated_at TEXT NOT NULL DEFAULT (datetime('now','+8 hours')),
+		UNIQUE(shop_id, sku_id, record_date)
+	);
+	CREATE INDEX IF NOT EXISTS idx_das_sku_date ON daily_aftersale_logs(sku_id, record_date);
+	CREATE INDEX IF NOT EXISTS idx_das_date ON daily_aftersale_logs(record_date);
+
+	CREATE TABLE IF NOT EXISTS daily_sales_logs (
+		id                INTEGER PRIMARY KEY AUTOINCREMENT,
+		shop_id           INTEGER NOT NULL,
+		sku_id            INTEGER NOT NULL,
+		record_date       TEXT NOT NULL,
+		sales_amount      REAL NOT NULL DEFAULT 0,
+		order_count       INTEGER NOT NULL DEFAULT 0,
+		order_items_count INTEGER NOT NULL DEFAULT 0,
+		operator_name     TEXT NOT NULL DEFAULT '',
+		created_at        TEXT NOT NULL DEFAULT (datetime('now','+8 hours')),
+		updated_at        TEXT NOT NULL DEFAULT (datetime('now','+8 hours')),
+		UNIQUE(shop_id, sku_id, record_date)
+	);
+	CREATE INDEX IF NOT EXISTS idx_dsl_sku_date ON daily_sales_logs(sku_id, record_date);
+
+	CREATE TABLE IF NOT EXISTS daily_fill_order_logs (
+		id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+		shop_id             INTEGER NOT NULL DEFAULT 0,
+		sku_id              INTEGER NOT NULL,
+		record_date         TEXT NOT NULL,
+		fill_order_total_num INTEGER NOT NULL DEFAULT 0,
+		fill_order_count     INTEGER NOT NULL DEFAULT 0,
+		fill_order_amount    REAL NOT NULL DEFAULT 0,
+		fill_order_cost      REAL NOT NULL DEFAULT 0,
+		operator_name       TEXT NOT NULL DEFAULT '',
+		created_at          TEXT NOT NULL DEFAULT (datetime('now','+8 hours')),
+		updated_at          TEXT NOT NULL DEFAULT (datetime('now','+8 hours')),
+		UNIQUE(shop_id, sku_id, record_date)
+	);
+	CREATE INDEX IF NOT EXISTS idx_dfl_sku_date ON daily_fill_order_logs(sku_id, record_date);
+
+	CREATE TABLE IF NOT EXISTS daily_promotion_logs (
+		id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+		shop_id             INTEGER NOT NULL,
+		sku_id              INTEGER NOT NULL,
+		record_date         TEXT NOT NULL,
+		promotion_alliance  REAL NOT NULL DEFAULT 0,
+		promotion_auto      REAL NOT NULL DEFAULT 0,
+		promotion_jd_union  REAL NOT NULL DEFAULT 0,
+		promotion_search    REAL NOT NULL DEFAULT 0,
+		promotion_recommend REAL NOT NULL DEFAULT 0,
+		promotion_total     REAL NOT NULL DEFAULT 0,
+		operator_name       TEXT NOT NULL DEFAULT '',
+		created_at          TEXT NOT NULL DEFAULT (datetime('now','+8 hours')),
+		updated_at          TEXT NOT NULL DEFAULT (datetime('now','+8 hours')),
+		UNIQUE(shop_id, sku_id, record_date)
+	);
+	CREATE INDEX IF NOT EXISTS idx_dplog_sku_date ON daily_promotion_logs(sku_id, record_date);
+
 	CREATE INDEX IF NOT EXISTS idx_dpl_sku_date ON daily_profit_logs(sku_id, record_date);
+
+	-- 触发器：sales_logs → profit_logs
+	CREATE TRIGGER IF NOT EXISTS trg_sales_sync AFTER INSERT ON daily_sales_logs
+	BEGIN
+		INSERT OR IGNORE INTO daily_profit_logs (sku_id, record_date, sales_amount, order_count, order_items_count)
+		VALUES (NEW.sku_id, NEW.record_date, ROUND(NEW.sales_amount,2), NEW.order_count, NEW.order_items_count);
+	END;
+	CREATE TRIGGER IF NOT EXISTS trg_sales_sync_upd AFTER UPDATE ON daily_sales_logs
+	BEGIN
+		UPDATE daily_profit_logs SET
+			sales_amount = ROUND(NEW.sales_amount,2), order_count = NEW.order_count,
+			order_items_count = NEW.order_items_count, updated_at = datetime('now','+8 hours')
+		WHERE sku_id = NEW.sku_id AND record_date = NEW.record_date;
+	END;
+
+	-- 触发器：fill_order_logs → profit_logs
+	CREATE TRIGGER IF NOT EXISTS trg_fill_sync AFTER INSERT ON daily_fill_order_logs
+	BEGIN
+		INSERT OR IGNORE INTO daily_profit_logs (sku_id, record_date, fill_order_count, fill_order_amount, fill_order_cost)
+		VALUES (NEW.sku_id, NEW.record_date, NEW.fill_order_count, ROUND(NEW.fill_order_amount,2), ROUND(NEW.fill_order_cost,2));
+	END;
+	CREATE TRIGGER IF NOT EXISTS trg_fill_sync_upd AFTER UPDATE ON daily_fill_order_logs
+	BEGIN
+		UPDATE daily_profit_logs SET
+			fill_order_count = NEW.fill_order_count, fill_order_amount = ROUND(NEW.fill_order_amount,2),
+			fill_order_cost = ROUND(NEW.fill_order_cost,2), updated_at = datetime('now','+8 hours')
+		WHERE sku_id = NEW.sku_id AND record_date = NEW.record_date;
+	END;
+
+	-- 触发器：promotion_logs → profit_logs
+	CREATE TRIGGER IF NOT EXISTS trg_promo_sync AFTER INSERT ON daily_promotion_logs
+	BEGIN
+		INSERT OR IGNORE INTO daily_profit_logs (sku_id, record_date, promotion_alliance, promotion_auto, promotion_jd_union, promotion_search, promotion_recommend, promotion_total)
+		VALUES (NEW.sku_id, NEW.record_date, ROUND(NEW.promotion_alliance,2), ROUND(NEW.promotion_auto,2), ROUND(NEW.promotion_jd_union,2), ROUND(NEW.promotion_search,2), ROUND(NEW.promotion_recommend,2), ROUND(NEW.promotion_total,2));
+	END;
+	CREATE TRIGGER IF NOT EXISTS trg_promo_sync_upd AFTER UPDATE ON daily_promotion_logs
+	BEGIN
+		UPDATE daily_profit_logs SET
+			promotion_alliance = ROUND(NEW.promotion_alliance,2), promotion_auto = ROUND(NEW.promotion_auto,2),
+			promotion_jd_union = ROUND(NEW.promotion_jd_union,2), promotion_search = ROUND(NEW.promotion_search,2),
+			promotion_recommend = ROUND(NEW.promotion_recommend,2), promotion_total = ROUND(NEW.promotion_total,2),
+			updated_at = datetime('now','+8 hours')
+		WHERE sku_id = NEW.sku_id AND record_date = NEW.record_date;
+	END;
+
+	-- 触发器：promotion_total 自动 = 五项推广之和
+	CREATE TRIGGER IF NOT EXISTS trg_dpl_promo_insert AFTER INSERT ON daily_profit_logs
+	BEGIN
+		UPDATE daily_profit_logs SET promotion_total =
+			NEW.promotion_alliance + NEW.promotion_auto + NEW.promotion_jd_union +
+			NEW.promotion_search + NEW.promotion_recommend
+		WHERE log_id = NEW.log_id;
+	END;
+
+	CREATE TRIGGER IF NOT EXISTS trg_dpl_promo_update AFTER UPDATE ON daily_profit_logs
+	WHEN NEW.promotion_alliance <> OLD.promotion_alliance OR NEW.promotion_auto <> OLD.promotion_auto OR
+	     NEW.promotion_jd_union <> OLD.promotion_jd_union OR NEW.promotion_search <> OLD.promotion_search OR
+	     NEW.promotion_recommend <> OLD.promotion_recommend
+	BEGIN
+		UPDATE daily_profit_logs SET promotion_total =
+			NEW.promotion_alliance + NEW.promotion_auto + NEW.promotion_jd_union +
+			NEW.promotion_search + NEW.promotion_recommend
+		WHERE log_id = NEW.log_id;
+	END;
 	`
 	_, err := db.Exec(schema)
 	if err != nil { return err }

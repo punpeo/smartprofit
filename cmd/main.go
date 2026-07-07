@@ -25,12 +25,15 @@ func main() {
 	skuDao := dao.NewSkuDao(db.DB)
 	dailyProfitDao := dao.NewDailyProfitDao(db.DB)
 	productDao := dao.NewProductDao(db.DB)
+	aftersaleDao := dao.NewAftersaleDao(db.DB)
 
 	h := &handler.Handler{
 		ShopDao:        shopDao,
 		SkuDao:         skuDao,
 		DailyProfitDao: dailyProfitDao,
 		ProductDao:     productDao,
+		AftersaleDao:   aftersaleDao,
+		DB:             db.DB,
 	}
 
 	// 注册路由

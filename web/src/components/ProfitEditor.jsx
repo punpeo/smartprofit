@@ -29,8 +29,12 @@ export function ProfitEditor({ shopId, baseSkus, recordDate, onClose, onSaved, m
   const [loadingData, setLoadingData] = useState(false)
   const [isExisting, setIsExisting] = useState(false)
   const [productCache, setProductCache] = useState(null)
+  const [toast, setToast] = useState('')
 
-  const filtered = baseSkus.filter(s => !search || s.sku_code.toLowerCase().includes(search.toLowerCase()) || (s.product_name||'').toLowerCase().includes(search.toLowerCase()))
+  const filtered = baseSkus.filter(s =>
+    (!search || s.sku_code.toLowerCase().includes(search.toLowerCase()) || (s.product_name||'').toLowerCase().includes(search.toLowerCase())) &&
+    (!shopId || s.shop_id === Number(shopId))
+  )
 
   // 选 SKU 后加载数据 + 缓存产品
   useEffect(() => {
@@ -81,7 +85,11 @@ export function ProfitEditor({ shopId, baseSkus, recordDate, onClose, onSaved, m
 
   async function handleSave() {
     if (!selected) return
-    if (!form.sales_amount || !form.order_count || !form.order_items_count) { alert('请填写销售额、订单量、订单件数（必填）'); return }
+    if (!form.sales_amount || !form.order_count || !form.order_items_count) {
+      setToast('请填写销售额、订单量、订单件数（必填）')
+      setTimeout(() => setToast(''), 2500)
+      return
+    }
     setSaving(true)
     try { await api.saveSKU(selected.sku_code, {...form,real_sales_amount:realSales,real_order_count:realOrders,promotion_total:promoTotal,final_profit:profit,record_date:recordDate}) } catch {}
     onSaved?.(); setSaving(false); onClose()
@@ -97,6 +105,12 @@ export function ProfitEditor({ shopId, baseSkus, recordDate, onClose, onSaved, m
           <div className="flex-1 overflow-y-auto py-1">{filtered.map(s => (<button key={s.sku_code} onClick={() => setSelected(s)} className={`w-full flex items-center justify-between px-4 py-3 text-left transition-all ${selected?.sku_code === s.sku_code ? 'bg-blue-500/10 border-r-2 border-blue-400' : 'hover:bg-white/[0.03] border-r-2 border-transparent'}`}><div className="min-w-0"><div className="text-sm text-white/85 truncate">{s.sku_code}</div><div className="text-[11px] text-white/35 truncate">{s.product_name || ''}</div></div>{selected?.sku_code === s.sku_code && <ChevronRight size={14} className="text-blue-400 shrink-0" />}</button>))}</div>
         </div>
         <div className="relative z-10 flex-1 flex flex-col min-w-0 bg-[#0e0e16]/60 backdrop-blur-sm">
+          {toast && (
+            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+              className="absolute top-3 left-1/2 -translate-x-1/2 z-30 px-5 py-2 rounded-full bg-red-400/10 border border-red-400/20 text-sm text-red-400/90 backdrop-blur-md shadow-lg whitespace-nowrap">
+              {toast}
+            </motion.div>
+          )}
           <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.07] shrink-0">
             <div><h2 className="text-base font-medium text-white">{isExisting ? '✏️ 编辑利润数据' : mode === 'edit' ? '✏️ 编辑利润数据' : '➕ 新增利润数据'}{selected && <span className="text-white/45 font-normal ml-2 text-sm">{selected.sku_code} · {selected.product_name || ''}</span>}</h2><p className="text-xs text-white/35 mt-0.5">{'\u{1F4C5}'} {recordDate}{mode === 'new' && isExisting && <span className="text-amber-400/70 ml-2">今日已有记录，修改将覆盖原数据</span>}</p></div>
             <div className="flex items-center gap-2">{selected && <button onClick={autoCalc} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-blue-400 border border-blue-400/30 hover:bg-blue-400/10 transition-all"><Calculator size={13} /> 自动计算</button>}<button onClick={onClose} className="p-2 rounded-lg hover:bg-white/[0.05] text-white/55 hover:text-white transition-all"><X size={18} /></button></div>

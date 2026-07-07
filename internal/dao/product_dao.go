@@ -25,10 +25,10 @@ func (d *ProductDao) GetAll(ctx context.Context) ([]*model.Product, error) {
 	return ps, nil
 }
 
-const createProductSQL = `INSERT INTO products (product_name,category,image_url,default_cost,default_shipping_cost,default_service_fee_rate,default_tax_rate,platform_commission_rate,default_freight_insurance,default_exchange_cost,default_return_cost,default_fill_order_cost) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+const createProductSQL = `INSERT INTO products (product_name,category,image_url,default_cost,default_shipping_cost,default_service_fee_rate,default_tax_rate,platform_commission_rate,default_freight_insurance,default_exchange_cost,default_return_cost,default_fill_order_cost) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
 
 func (d *ProductDao) Create(ctx context.Context, p *model.Product) (int64, error) {
-	r, err := d.db.ExecContext(ctx, createProductSQL, p.ProductName, p.Category, p.ImageURL, p.DefaultCost, p.DefaultShippingCost, p.DefaultServiceFeeRate, p.DefaultTaxRate, p.DefaultFreightInsurance, p.DefaultExchangeCost, p.DefaultReturnCost, p.DefaultFillOrderCost)
+	r, err := d.db.ExecContext(ctx, createProductSQL, p.ProductName, p.Category, p.ImageURL, p.DefaultCost, p.DefaultShippingCost, p.DefaultServiceFeeRate, p.DefaultTaxRate, p.PlatformCommissionRate, p.DefaultFreightInsurance, p.DefaultExchangeCost, p.DefaultReturnCost, p.DefaultFillOrderCost)
 	if err != nil { return 0, err }
 	return r.LastInsertId()
 }

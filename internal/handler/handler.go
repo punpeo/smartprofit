@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -15,6 +16,8 @@ type Handler struct {
 	SkuDao         *dao.SkuDao
 	DailyProfitDao *dao.DailyProfitDao
 	ProductDao     *dao.ProductDao
+	AftersaleDao   *dao.AftersaleDao
+	DB             *sql.DB
 }
 
 func writeJSON(w http.ResponseWriter, s int, v interface{}) { w.Header().Set("Content-Type","application/json; charset=utf-8"); w.WriteHeader(s); json.NewEncoder(w).Encode(v) }
@@ -195,6 +198,14 @@ func (h *Handler) SaveSKU(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 推广费合计自动计算
+	// 从售后汇总表同步退货量/换货量（如 profit_logs 未传值）
+	if b.ReturnCount == 0 {
+		if rv, _, err := h.AftersaleDao.GetValidCounts(r.Context(), sku.SkuID, b.RecordDate); err == nil { b.ReturnCount = rv }
+	}
+	if b.ExchangeCount == 0 {
+		if _, ev, err := h.AftersaleDao.GetValidCounts(r.Context(), sku.SkuID, b.RecordDate); err == nil { b.ExchangeCount = ev }
+	}
+
 	b.PromotionTotal = b.PromotionAlliance + b.PromotionAuto + b.PromotionJDUnion + b.PromotionSearch + b.PromotionRecommend
 
 	// 最终利润自动计算
@@ -204,6 +215,68 @@ func (h *Handler) SaveSKU(w http.ResponseWriter, r *http.Request) {
 	h.DailyProfitDao.Save(r.Context(), &b)
 	writeJSON(w,200,map[string]interface{}{"ok":true,"profit":b.FinalProfit})
 }
+// ── Source Table Handlers（写入后触发器自动同步到 daily_profit_logs）──
+
+func (h *Handler) UpsertSales(w http.ResponseWriter, r *http.Request) {
+	var log model.DailySalesLog
+	if json.NewDecoder(r.Body).Decode(&log) != nil { writeError(w, 400, "invalid JSON"); return }
+	if log.SkuID == 0 || log.RecordDate == "" { writeError(w, 400, "sku_id and record_date required"); return }
+	_, err := h.DB.ExecContext(r.Context(),
+		`INSERT INTO daily_sales_logs (shop_id, sku_id, record_date, sales_amount, order_count, order_items_count) VALUES (?,?,?,ROUND(?,2),?,?)
+		ON CONFLICT(shop_id, sku_id, record_date) DO UPDATE SET sales_amount=ROUND(excluded.sales_amount,2), order_count=excluded.order_count, order_items_count=excluded.order_items_count, updated_at=datetime('now','+8 hours')`,
+		log.ShopID, log.SkuID, log.RecordDate, log.SalesAmount, log.OrderCount, log.OrderItemsCount)
+	if err != nil { writeError(w, 500, err.Error()); return }
+	writeJSON(w, 200, map[string]string{"message": "ok"})
+}
+
+func (h *Handler) UpsertFillOrder(w http.ResponseWriter, r *http.Request) {
+	var log model.DailyFillOrderLog
+	if json.NewDecoder(r.Body).Decode(&log) != nil { writeError(w, 400, "invalid JSON"); return }
+	if log.SkuID == 0 || log.RecordDate == "" { writeError(w, 400, "sku_id and record_date required"); return }
+
+	// FillOrderCost 自动 = FillOrderTotalNum × product.default_fill_order_cost（SQL 子查询）
+	_, err := h.DB.ExecContext(r.Context(),
+		`INSERT INTO daily_fill_order_logs (shop_id, sku_id, record_date, fill_order_total_num, fill_order_count, fill_order_amount, fill_order_cost)
+		VALUES (?1,?2,?3,?4,?5,ROUND(?6,2),
+			ROUND(?4,2) * COALESCE((SELECT p.default_fill_order_cost FROM products p JOIN skus s ON s.product_id=p.product_id WHERE s.sku_id=?2),0))
+		ON CONFLICT(shop_id, sku_id, record_date) DO UPDATE SET
+			fill_order_total_num=excluded.fill_order_total_num, fill_order_count=excluded.fill_order_count,
+			fill_order_amount=ROUND(excluded.fill_order_amount,2),
+			fill_order_cost=ROUND(excluded.fill_order_total_num,2) * COALESCE((SELECT p.default_fill_order_cost FROM products p JOIN skus s ON s.product_id=p.product_id WHERE s.sku_id=?2),0),
+			updated_at=datetime('now','+8 hours')`,
+		log.ShopID, log.SkuID, log.RecordDate, log.FillOrderTotalNum, log.FillOrderCount, log.FillOrderAmount)
+	if err != nil { writeError(w, 500, err.Error()); return }
+	writeJSON(w, 200, map[string]string{"message": "ok"})
+}
+
+func (h *Handler) UpsertPromotion(w http.ResponseWriter, r *http.Request) {
+	var log model.DailyPromotionLog
+	if json.NewDecoder(r.Body).Decode(&log) != nil { writeError(w, 400, "invalid JSON"); return }
+	if log.SkuID == 0 || log.RecordDate == "" { writeError(w, 400, "sku_id and record_date required"); return }
+	_, err := h.DB.ExecContext(r.Context(),
+		`INSERT INTO daily_promotion_logs (shop_id, sku_id, record_date, promotion_alliance, promotion_auto, promotion_jd_union, promotion_search, promotion_recommend, promotion_total) VALUES (?,?,?,ROUND(?,2),ROUND(?,2),ROUND(?,2),ROUND(?,2),ROUND(?,2),ROUND(?,2))
+		ON CONFLICT(shop_id, sku_id, record_date) DO UPDATE SET promotion_alliance=ROUND(excluded.promotion_alliance,2), promotion_auto=ROUND(excluded.promotion_auto,2), promotion_jd_union=ROUND(excluded.promotion_jd_union,2), promotion_search=ROUND(excluded.promotion_search,2), promotion_recommend=ROUND(excluded.promotion_recommend,2), promotion_total=ROUND(excluded.promotion_total,2), updated_at=datetime('now','+8 hours')`,
+		log.ShopID, log.SkuID, log.RecordDate, log.PromotionAlliance, log.PromotionAuto, log.PromotionJDUnion, log.PromotionSearch, log.PromotionRecommend, log.PromotionTotal)
+	if err != nil { writeError(w, 500, err.Error()); return }
+	writeJSON(w, 200, map[string]string{"message": "ok"})
+}
+
+func (h *Handler) UpsertAftersale(w http.ResponseWriter, r *http.Request) {
+	var log model.DailyAftersaleLog
+	if json.NewDecoder(r.Body).Decode(&log) != nil { writeError(w, 400, "invalid JSON"); return }
+	if log.SkuID == 0 || log.RecordDate == "" { writeError(w, 400, "sku_id and record_date required"); return }
+	if err := h.AftersaleDao.Upsert(r.Context(), &log); err != nil { writeError(w, 500, err.Error()); return }
+	writeJSON(w, 200, map[string]string{"message": "ok"})
+}
+
+func (h *Handler) GetAftersale(w http.ResponseWriter, r *http.Request) {
+	skuID, _ := pathInt(r, "sku_id")
+	date := r.URL.Query().Get("date")
+	if date == "" { date = today() }
+	rv, ev, _ := h.AftersaleDao.GetValidCounts(r.Context(), int64(skuID), date)
+	writeJSON(w, 200, map[string]int{"return_valid": rv, "exchange_valid": ev})
+}
+
 func (h *Handler) CopyYesterday(w http.ResponseWriter, r *http.Request) {
 	id, _ := pathInt(r,"id"); h.DailyProfitDao.CopyYesterdayData(r.Context(), id)
 	writeJSON(w,200,map[string]string{"message":"ok"})

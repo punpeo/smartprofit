@@ -17,6 +17,11 @@ func Setup(h *handler.Handler) http.Handler {
 	mux.HandleFunc("POST /api/clear-all", h.ClearAll)
 	mux.HandleFunc("GET /api/shops/{id}/summary", h.ShopSummary)
 	mux.HandleFunc("GET /api/shops/{id}/skus", h.ListSKUs)
+	mux.HandleFunc("POST /api/aftersale", h.UpsertAftersale)
+	mux.HandleFunc("GET /api/aftersale/{sku_id}", h.GetAftersale)
+	mux.HandleFunc("POST /api/sales", h.UpsertSales)
+	mux.HandleFunc("POST /api/fill-order", h.UpsertFillOrder)
+	mux.HandleFunc("POST /api/promotion", h.UpsertPromotion)
 	mux.HandleFunc("POST /api/shops/{id}/copy-yesterday", h.CopyYesterday)
 
 	mux.HandleFunc("GET /api/products", h.ListProducts)
