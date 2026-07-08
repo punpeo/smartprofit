@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"smartprofit/internal/dao"
@@ -228,9 +229,9 @@ func (h *Handler) UpsertSales(w http.ResponseWriter, r *http.Request) {
 	if json.NewDecoder(r.Body).Decode(&log) != nil { writeError(w, 400, "invalid JSON"); return }
 	if log.SkuID == 0 || log.RecordDate == "" { writeError(w, 400, "sku_id and record_date required"); return }
 	_, err := h.DB.ExecContext(r.Context(),
-		`INSERT INTO daily_sales_logs (shop_id, sku_id, record_date, sales_amount, order_count, order_items_count) VALUES (?,?,?,ROUND(?,2),?,?)
-		ON CONFLICT(shop_id, sku_id, record_date) DO UPDATE SET sales_amount=ROUND(excluded.sales_amount,2), order_count=excluded.order_count, order_items_count=excluded.order_items_count, updated_at=datetime('now','+8 hours')`,
-		log.ShopID, log.SkuID, log.RecordDate, log.SalesAmount, log.OrderCount, log.OrderItemsCount)
+		`INSERT INTO daily_sales_logs (shop_id, sku_id, record_date, sales_amount, order_count, order_items_count, operator_name) VALUES (?,?,?,ROUND(?,2),?,?,?)
+		ON CONFLICT(shop_id, sku_id, record_date) DO UPDATE SET sales_amount=ROUND(excluded.sales_amount,2), order_count=excluded.order_count, order_items_count=excluded.order_items_count, operator_name=excluded.operator_name, updated_at=datetime('now','+8 hours')`,
+		log.ShopID, log.SkuID, log.RecordDate, log.SalesAmount, log.OrderCount, log.OrderItemsCount, log.OperatorName)
 	if err != nil { writeError(w, 500, err.Error()); return }
 	writeJSON(w, 200, map[string]string{"message": "ok"})
 }
@@ -242,15 +243,16 @@ func (h *Handler) UpsertFillOrder(w http.ResponseWriter, r *http.Request) {
 
 	// FillOrderCost 自动 = FillOrderCount × product.default_fill_order_cost（SQL 子查询）
 	_, err := h.DB.ExecContext(r.Context(),
-		`INSERT INTO daily_fill_order_logs (shop_id, sku_id, record_date, fill_order_count, fill_order_amount, fill_order_cost)
-		VALUES (?1,?2,?3,?4,ROUND(?5,2),
-			ROUND(?4,2) * COALESCE((SELECT p.default_fill_order_cost FROM products p JOIN skus s ON s.product_id=p.product_id WHERE s.sku_id=?2),0))
+		`INSERT INTO daily_fill_order_logs (shop_id, sku_id, record_date, fill_order_count, fill_order_amount, fill_order_cost, operator_name)
+		VALUES (?,?,?,?,ROUND(?,2),
+			ROUND(?,2) * COALESCE((SELECT p.default_fill_order_cost FROM products p JOIN skus s ON s.product_id=p.product_id WHERE s.sku_id=?),0), ?)
 		ON CONFLICT(shop_id, sku_id, record_date) DO UPDATE SET
 			fill_order_count=excluded.fill_order_count,
 			fill_order_amount=ROUND(excluded.fill_order_amount,2),
-			fill_order_cost=ROUND(excluded.fill_order_count,2) * COALESCE((SELECT p.default_fill_order_cost FROM products p JOIN skus s ON s.product_id=p.product_id WHERE s.sku_id=?2),0),
+			fill_order_cost=ROUND(excluded.fill_order_count,2) * COALESCE((SELECT p.default_fill_order_cost FROM products p JOIN skus s ON s.product_id=p.product_id WHERE s.sku_id=?),0),
+				operator_name=excluded.operator_name,
 			updated_at=datetime('now','+8 hours')`,
-		log.ShopID, log.SkuID, log.RecordDate, log.FillOrderCount, log.FillOrderAmount)
+		log.ShopID, log.SkuID, log.RecordDate, log.FillOrderCount, log.FillOrderAmount, log.FillOrderCount, log.SkuID, log.OperatorName, log.SkuID)
 	if err != nil { writeError(w, 500, err.Error()); return }
 	writeJSON(w, 200, map[string]string{"message": "ok"})
 }
@@ -260,9 +262,9 @@ func (h *Handler) UpsertPromotion(w http.ResponseWriter, r *http.Request) {
 	if json.NewDecoder(r.Body).Decode(&log) != nil { writeError(w, 400, "invalid JSON"); return }
 	if log.SkuID == 0 || log.RecordDate == "" { writeError(w, 400, "sku_id and record_date required"); return }
 	_, err := h.DB.ExecContext(r.Context(),
-		`INSERT INTO daily_promotion_logs (shop_id, sku_id, record_date, promotion_alliance, promotion_auto, promotion_jd_union, promotion_search, promotion_recommend, promotion_total) VALUES (?,?,?,ROUND(?,2),ROUND(?,2),ROUND(?,2),ROUND(?,2),ROUND(?,2),ROUND(?,2))
-		ON CONFLICT(shop_id, sku_id, record_date) DO UPDATE SET promotion_alliance=ROUND(excluded.promotion_alliance,2), promotion_auto=ROUND(excluded.promotion_auto,2), promotion_jd_union=ROUND(excluded.promotion_jd_union,2), promotion_search=ROUND(excluded.promotion_search,2), promotion_recommend=ROUND(excluded.promotion_recommend,2), promotion_total=ROUND(excluded.promotion_total,2), updated_at=datetime('now','+8 hours')`,
-		log.ShopID, log.SkuID, log.RecordDate, log.PromotionAlliance, log.PromotionAuto, log.PromotionJDUnion, log.PromotionSearch, log.PromotionRecommend, log.PromotionTotal)
+		`INSERT INTO daily_promotion_logs (shop_id, sku_id, record_date, promotion_alliance, promotion_auto, promotion_jd_union, promotion_search, promotion_recommend, promotion_total, operator_name) VALUES (?,?,?,ROUND(?,2),ROUND(?,2),ROUND(?,2),ROUND(?,2),ROUND(?,2),ROUND(?,2),?)
+		ON CONFLICT(shop_id, sku_id, record_date) DO UPDATE SET promotion_alliance=ROUND(excluded.promotion_alliance,2), promotion_auto=ROUND(excluded.promotion_auto,2), promotion_jd_union=ROUND(excluded.promotion_jd_union,2), promotion_search=ROUND(excluded.promotion_search,2), promotion_recommend=ROUND(excluded.promotion_recommend,2), promotion_total=ROUND(excluded.promotion_total,2), operator_name=excluded.operator_name, updated_at=datetime('now','+8 hours')`,
+		log.ShopID, log.SkuID, log.RecordDate, log.PromotionAlliance, log.PromotionAuto, log.PromotionJDUnion, log.PromotionSearch, log.PromotionRecommend, log.PromotionTotal, log.OperatorName)
 	if err != nil { writeError(w, 500, err.Error()); return }
 	writeJSON(w, 200, map[string]string{"message": "ok"})
 }
@@ -308,10 +310,11 @@ func (h *Handler) HandleBatchImport(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	codeToID, _ := fileimport.BuildCodeToID(ctx, h.DB)
+	skuToShopID, _ := fileimport.BuildSKUToShopID(ctx, h.DB)
 	shopCodeToID, _ := fileimport.BuildShopNameToID(ctx, h.DB)
 
-	var shopID int64
-	for _, id := range shopCodeToID { shopID = id; break }
+	
+	
 
 	results := make(map[string]int)
 	for _, info := range infos {
@@ -327,10 +330,10 @@ func (h *Handler) HandleBatchImport(w http.ResponseWriter, r *http.Request) {
 
 		switch ft {
 		case fileimport.TypeSales:
-			n, _ := fileimport.ImportSales(ctx, h.DB, parsed, codeToID, shopID)
+			n, _ := fileimport.ImportSales(ctx, h.DB, parsed, codeToID, skuToShopID)
 			results["sales"] += n
 		case fileimport.TypeAftersale:
-			n, _ := fileimport.ImportAftersale(ctx, h.DB, parsed, codeToID, shopID)
+			n, _ := fileimport.ImportAftersale(ctx, h.DB, parsed, codeToID, skuToShopID)
 			results["aftersale"] += n
 		case fileimport.TypePromotion:
 			p, f := fileimport.ImportPromotion(ctx, h.DB, parsed, codeToID, shopCodeToID)
@@ -361,7 +364,193 @@ func (h *Handler) ClearBusinessData(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"message": "business data cleared, base tables preserved"})
 }
 
+// ── 导出 CSV ──
+func (h *Handler) exportDailyCSV(w http.ResponseWriter, r *http.Request, table string, cols []string, headers []string) {
+	start, end, shopID, skuID, _, _ := dailyParams(r)
+	noLimitSQL := "SELECT " + strings.Join(cols, ",") + " FROM " + table + " WHERE record_date BETWEEN ? AND ?"
+	if shopID > 0 { noLimitSQL += " AND shop_id=?" }
+	if skuID > 0 { noLimitSQL += " AND sku_id=?" }
+	noLimitSQL += " ORDER BY record_date DESC, id"
+
+	args := []interface{}{start, end}
+	if shopID > 0 { args = append(args, shopID) }
+	if skuID > 0 { args = append(args, skuID) }
+
+	rows, err := h.DB.QueryContext(r.Context(), noLimitSQL, args...)
+	if err != nil { writeError(w, 500, err.Error()); return }
+	defer rows.Close()
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s_%s_%s.csv", table, start, end))
+	w.Write([]byte{0xEF, 0xBB, 0xBF}) // BOM for Excel UTF-8
+	fmt.Fprint(w, strings.Join(headers, ",")+"\n")
+
+	vals := make([]interface{}, len(cols))
+	ptrs := make([]interface{}, len(cols))
+	for i := range vals { ptrs[i] = &vals[i] }
+	for rows.Next() {
+		rows.Scan(ptrs...)
+		parts := make([]string, len(cols))
+		for i, v := range vals {
+			switch x := v.(type) {
+			case nil: parts[i] = "-"
+			case float64: parts[i] = fmt.Sprintf("%.2f", x)
+			default: parts[i] = fmt.Sprintf("%v", x)
+			}
+		}
+		fmt.Fprint(w, strings.Join(parts, ",")+"\n")
+	}
+}
+
+func (h *Handler) ExportAftersale(w http.ResponseWriter, r *http.Request) {
+	h.exportDailyCSV(w, r, "daily_aftersale_logs",
+		[]string{"id","shop_id","sku_id","record_date","return_total","return_valid","return_cancel","exchange_total","exchange_valid","exchange_cancel","aftersale_total","aftersale_cancel"},
+		[]string{"ID","店铺ID","SKU ID","日期","退货总数","有效退货","取消退货","换货总数","有效换货","取消换货","售后合计"})
+}
+func (h *Handler) ExportFillOrder(w http.ResponseWriter, r *http.Request) {
+	h.exportDailyCSV(w, r, "daily_fill_order_logs",
+		[]string{"id","shop_id","sku_id","record_date","fill_order_count","fill_order_amount","fill_order_cost"},
+		[]string{"ID","店铺ID","SKU ID","日期","补单数量","补单金额","补单成本"})
+}
+func (h *Handler) ExportPromotion(w http.ResponseWriter, r *http.Request) {
+	h.exportDailyCSV(w, r, "daily_promotion_logs",
+		[]string{"id","shop_id","sku_id","record_date","promotion_alliance","promotion_auto","promotion_jd_union","promotion_search","promotion_recommend","promotion_total"},
+		[]string{"ID","店铺ID","SKU ID","日期","全站营销","智能投放","京东联盟","搜索快车","推荐广告","推广合计"})
+}
+
 func (h *Handler) CopyYesterday(w http.ResponseWriter, r *http.Request) {
 	id, _ := pathInt(r,"id"); h.DailyProfitDao.CopyYesterdayData(r.Context(), id)
 	writeJSON(w,200,map[string]string{"message":"ok"})
+}
+
+// ═══════════════════════════════════════════
+// 每日源数据记录接口：售后 / 补单 / 推广
+// 全部 JOIN shops + skus，返回业务名称，不返回原始 ID
+// ═══════════════════════════════════════════
+
+func dailyParams(r *http.Request) (start, end string, shopID, skuID int64, page, pageSize int) {
+	start = r.URL.Query().Get("start"); if start == "" { start = "1970-01-01" }
+	end = r.URL.Query().Get("end"); if end == "" { end = "2099-12-31" }
+	shopID, _ = strconv.ParseInt(r.URL.Query().Get("shop_id"), 10, 64)
+	skuID, _ = strconv.ParseInt(r.URL.Query().Get("sku_id"), 10, 64)
+	page, _ = strconv.Atoi(r.URL.Query().Get("page")); if page < 1 { page = 1 }
+	pageSize, _ = strconv.Atoi(r.URL.Query().Get("page_size")); if pageSize < 1 || pageSize > 100 { pageSize = 20 }
+	return
+}
+
+// JOIN 查询模板（带店铺名和 SKU 编码）
+func dailyJoinSQL(table, cols string) string {
+	return "SELECT " + cols + " FROM " + table + " d" +
+		" LEFT JOIN shops sh ON sh.shop_id=d.shop_id" +
+		" LEFT JOIN skus sk ON sk.sku_id=d.sku_id" +
+		" WHERE d.record_date BETWEEN ? AND ?" +
+		" AND (?=0 OR d.shop_id=?)" +
+		" AND (?=0 OR d.sku_id=?)" +
+		" ORDER BY d.record_date DESC, d.id LIMIT ? OFFSET ?"
+}
+
+func dailyJoinCount(table string) string {
+	return "SELECT count(*) FROM " + table + " d WHERE d.record_date BETWEEN ? AND ? AND (?=0 OR d.shop_id=?) AND (?=0 OR d.sku_id=?)"
+}
+
+// ── Aftersale (JOIN shops + skus) ──
+
+func (h *Handler) ListDailyAftersale(w http.ResponseWriter, r *http.Request) {
+	start, end, shopID, skuID, page, pageSize := dailyParams(r)
+	cols := "d.id, d.shop_id, d.sku_id, d.record_date, d.return_total, d.return_valid, d.return_cancel, d.exchange_total, d.exchange_valid, d.exchange_cancel, d.aftersale_total, d.aftersale_cancel, d.operator_name, d.created_at, d.updated_at, COALESCE(sh.shop_name,'') shop_name, COALESCE(sk.sku_code,'') sku_code"
+	rows, _ := h.DB.QueryContext(r.Context(), dailyJoinSQL("daily_aftersale_logs", cols), start, end, shopID, shopID, skuID, skuID, pageSize, (page-1)*pageSize)
+	defer rows.Close()
+	var items []map[string]interface{}
+	for rows.Next() {
+		var id, shopID2, skuID2 int64; var date, op, ca, ua, shopName, skuCode string
+		var rt, rv, rc, et, ev, ec, at, ac int
+		rows.Scan(&id, &shopID2, &skuID2, &date, &rt, &rv, &rc, &et, &ev, &ec, &at, &ac, &op, &ca, &ua, &shopName, &skuCode)
+		items = append(items, map[string]interface{}{
+			"id":id, "shop_id":shopID2, "sku_id":skuID2, "record_date":date,
+			"return_total":rt, "return_valid":rv, "return_cancel":rc,
+			"exchange_total":et, "exchange_valid":ev, "exchange_cancel":ec,
+			"aftersale_total":at, "aftersale_cancel":ac,
+			"operator_name":op, "created_at":ca, "updated_at":ua,
+			"shop_name":shopName, "sku_code":skuCode,
+		})
+	}
+	if items == nil { items = []map[string]interface{}{} }
+	var total int
+	h.DB.QueryRowContext(r.Context(), dailyJoinCount("daily_aftersale_logs"), start, end, shopID, shopID, skuID, skuID).Scan(&total)
+	writeJSON(w, 200, map[string]interface{}{"items": items, "total": total, "page": page, "page_size": pageSize})
+}
+
+func (h *Handler) GetDailyAftersale(w http.ResponseWriter, r *http.Request) {
+	id, _ := pathInt(r, "id")
+	var m model.DailyAftersaleLog
+	err := h.DB.QueryRowContext(r.Context(), "SELECT id, shop_id, sku_id, record_date, return_total, return_valid, return_cancel, exchange_total, exchange_valid, exchange_cancel, aftersale_total, aftersale_cancel, operator_name, created_at, updated_at FROM daily_aftersale_logs WHERE id=?", id).Scan(&m.ID, &m.ShopID, &m.SkuID, &m.RecordDate, &m.ReturnTotal, &m.ReturnValid, &m.ReturnCancel, &m.ExchangeTotal, &m.ExchangeValid, &m.ExchangeCancel, &m.AftersaleTotal, &m.AftersaleCancel, &m.OperatorName, &m.CreatedAt, &m.UpdatedAt)
+	if err != nil { writeError(w, 404, "not found"); return }
+	writeJSON(w, 200, m)
+}
+
+// ── Fill Order (JOIN shops + skus) ──
+
+func (h *Handler) ListDailyFillOrder(w http.ResponseWriter, r *http.Request) {
+	start, end, shopID, skuID, page, pageSize := dailyParams(r)
+	cols := "d.id, d.shop_id, d.sku_id, d.record_date, d.fill_order_count, d.fill_order_amount, d.fill_order_cost, d.operator_name, d.created_at, d.updated_at, COALESCE(sh.shop_name,'') shop_name, COALESCE(sk.sku_code,'') sku_code"
+	rows, _ := h.DB.QueryContext(r.Context(), dailyJoinSQL("daily_fill_order_logs", cols), start, end, shopID, shopID, skuID, skuID, pageSize, (page-1)*pageSize)
+	defer rows.Close()
+	var items []map[string]interface{}
+	for rows.Next() {
+		var id, shopID2, skuID2 int64; var date, op, ca, ua, shopName, skuCode string
+		var cnt int; var amt, cost float64
+		rows.Scan(&id, &shopID2, &skuID2, &date, &cnt, &amt, &cost, &op, &ca, &ua, &shopName, &skuCode)
+		items = append(items, map[string]interface{}{
+			"id":id, "shop_id":shopID2, "sku_id":skuID2, "record_date":date,
+			"fill_order_count":cnt, "fill_order_amount":amt, "fill_order_cost":cost,
+			"operator_name":op, "created_at":ca, "updated_at":ua,
+			"shop_name":shopName, "sku_code":skuCode,
+		})
+	}
+	if items == nil { items = []map[string]interface{}{} }
+	var total int
+	h.DB.QueryRowContext(r.Context(), dailyJoinCount("daily_fill_order_logs"), start, end, shopID, shopID, skuID, skuID).Scan(&total)
+	writeJSON(w, 200, map[string]interface{}{"items": items, "total": total, "page": page, "page_size": pageSize})
+}
+
+func (h *Handler) GetDailyFillOrder(w http.ResponseWriter, r *http.Request) {
+	id, _ := pathInt(r, "id")
+	var m model.DailyFillOrderLog
+	err := h.DB.QueryRowContext(r.Context(), "SELECT id, shop_id, sku_id, record_date, fill_order_count, fill_order_amount, fill_order_cost, operator_name, created_at, updated_at FROM daily_fill_order_logs WHERE id=?", id).Scan(&m.ID, &m.ShopID, &m.SkuID, &m.RecordDate, &m.FillOrderCount, &m.FillOrderAmount, &m.FillOrderCost, &m.OperatorName, &m.CreatedAt, &m.UpdatedAt)
+	if err != nil { writeError(w, 404, "not found"); return }
+	writeJSON(w, 200, m)
+}
+
+// ── Promotion (JOIN shops + skus) ──
+
+func (h *Handler) ListDailyPromotion(w http.ResponseWriter, r *http.Request) {
+	start, end, shopID, skuID, page, pageSize := dailyParams(r)
+	cols := "d.id, d.shop_id, d.sku_id, d.record_date, d.promotion_alliance, d.promotion_auto, d.promotion_jd_union, d.promotion_search, d.promotion_recommend, d.promotion_total, d.operator_name, d.created_at, d.updated_at, COALESCE(sh.shop_name,'') shop_name, COALESCE(sk.sku_code,'') sku_code"
+	rows, _ := h.DB.QueryContext(r.Context(), dailyJoinSQL("daily_promotion_logs", cols), start, end, shopID, shopID, skuID, skuID, pageSize, (page-1)*pageSize)
+	defer rows.Close()
+	var items []map[string]interface{}
+	for rows.Next() {
+		var id, shopID2, skuID2 int64; var date, op, ca, ua, shopName, skuCode string
+		var a, au, j, s, r, t float64
+		rows.Scan(&id, &shopID2, &skuID2, &date, &a, &au, &j, &s, &r, &t, &op, &ca, &ua, &shopName, &skuCode)
+		items = append(items, map[string]interface{}{
+			"id":id, "shop_id":shopID2, "sku_id":skuID2, "record_date":date,
+			"promotion_alliance":a, "promotion_auto":au, "promotion_jd_union":j,
+			"promotion_search":s, "promotion_recommend":r, "promotion_total":t,
+			"operator_name":op, "created_at":ca, "updated_at":ua,
+			"shop_name":shopName, "sku_code":skuCode,
+		})
+	}
+	if items == nil { items = []map[string]interface{}{} }
+	var total int
+	h.DB.QueryRowContext(r.Context(), dailyJoinCount("daily_promotion_logs"), start, end, shopID, shopID, skuID, skuID).Scan(&total)
+	writeJSON(w, 200, map[string]interface{}{"items": items, "total": total, "page": page, "page_size": pageSize})
+}
+
+func (h *Handler) GetDailyPromotion(w http.ResponseWriter, r *http.Request) {
+	id, _ := pathInt(r, "id")
+	var m model.DailyPromotionLog
+	err := h.DB.QueryRowContext(r.Context(), "SELECT id, shop_id, sku_id, record_date, promotion_alliance, promotion_auto, promotion_jd_union, promotion_search, promotion_recommend, promotion_total, operator_name, created_at, updated_at FROM daily_promotion_logs WHERE id=?", id).Scan(&m.ID, &m.ShopID, &m.SkuID, &m.RecordDate, &m.PromotionAlliance, &m.PromotionAuto, &m.PromotionJDUnion, &m.PromotionSearch, &m.PromotionRecommend, &m.PromotionTotal, &m.OperatorName, &m.CreatedAt, &m.UpdatedAt)
+	if err != nil { writeError(w, 404, "not found"); return }
+	writeJSON(w, 200, m)
 }

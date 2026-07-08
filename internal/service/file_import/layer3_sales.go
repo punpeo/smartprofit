@@ -10,7 +10,7 @@ import (
 )
 
 // ImportSales 第三层-类型1：商品明细 → daily_sales_logs
-func ImportSales(ctx context.Context, db *sql.DB, result *ParseResult, codeToID map[string]int64, shopID int64) (int, error) {
+func ImportSales(ctx context.Context, db *sql.DB, result *ParseResult, codeToID map[string]int64, skuToShopID map[int64]int64) (int, error) {
 	// 聚合：按 (sku_id, record_date) 分组
 	type key struct{ skuID int64; date string }
 	aggr := make(map[key]*struct {
@@ -54,12 +54,13 @@ func ImportSales(ctx context.Context, db *sql.DB, result *ParseResult, codeToID 
 		VALUES (?,?,?,?,?,?)
 		ON CONFLICT(shop_id, sku_id, record_date) DO UPDATE SET
 			sales_amount=excluded.sales_amount, order_count=excluded.order_count,
-			order_items_count=excluded.order_items_count, updated_at=datetime('now','+8 hours')`
+			order_items_count=excluded.order_items_count, operator_name=excluded.operator_name, updated_at=datetime('now','+8 hours')`
 
 	count := 0
 	for k, v := range aggr {
 		salesF, _ := v.sales.Float64()
-		_, err := db.ExecContext(ctx, sqlUpsert, shopID, k.skuID, k.date, salesF, v.orders, v.items)
+		shopID := skuToShopID[k.skuID]; if shopID == 0 { shopID = 1 }
+			_, err := db.ExecContext(ctx, sqlUpsert, shopID, k.skuID, k.date, salesF, v.orders, v.items, "")
 		if err != nil {
 			log.Printf("[import-sales] upsert error sku=%d date=%s: %v", k.skuID, k.date, err)
 			continue

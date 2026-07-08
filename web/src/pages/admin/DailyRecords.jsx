@@ -29,9 +29,9 @@ export function DailyRecords() {
   const [shops, setShops] = useState([])
   const [selectedShop, setSelectedShop] = useState('')
   const [search, setSearch] = useState('')
-  const [timeRange, setTimeRange] = useState('7days')
-  const [dateStart, setDateStart] = useState(getDateRange('7days').start)
-  const [dateEnd, setDateEnd] = useState(getDateRange('7days').end)
+  const [timeRange, setTimeRange] = useState('yesterday')
+  const [dateStart, setDateStart] = useState(getDateRange('yesterday').start)
+  const [dateEnd, setDateEnd] = useState(getDateRange('yesterday').end)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const pageSize = 10
@@ -40,8 +40,8 @@ export function DailyRecords() {
 
   useEffect(() => { api.fetchShops().then(setShops) }, [])
 
-  // 选店铺或改时间后自动查询
-  useEffect(() => { handleQuery() }, [selectedShop, dateStart, dateEnd])
+  // shops 加载完成后自动查询一次
+  useEffect(() => { if (shops.length > 0) handleQuery() }, [selectedShop, dateStart, dateEnd, shops])
 
   function handleTimeRange(range) {
     setTimeRange(range)

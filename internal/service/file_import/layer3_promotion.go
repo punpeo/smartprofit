@@ -91,7 +91,7 @@ func ImportPromotion(ctx context.Context, db *sql.DB, result *ParseResult, codeT
 			promotion_alliance=excluded.promotion_alliance, promotion_auto=excluded.promotion_auto,
 			promotion_jd_union=excluded.promotion_jd_union, promotion_search=excluded.promotion_search,
 			promotion_recommend=excluded.promotion_recommend, promotion_total=excluded.promotion_total,
-			updated_at=datetime('now','+8 hours')`
+			operator_name=excluded.operator_name, updated_at=datetime('now','+8 hours')`
 
 	for k, v := range promoMap {
 		a, _ := v.alliance.Float64(); au, _ := v.auto.Float64()
@@ -109,7 +109,7 @@ func ImportPromotion(ctx context.Context, db *sql.DB, result *ParseResult, codeT
 			fill_order_count=excluded.fill_order_count,
 			fill_order_amount=excluded.fill_order_amount,
 			fill_order_cost=ROUND(excluded.fill_order_count,2) * COALESCE((SELECT p.default_fill_order_cost FROM products p JOIN skus s ON s.product_id=p.product_id WHERE s.sku_id=?),0),
-			updated_at=datetime('now','+8 hours')`
+			operator_name=excluded.operator_name, updated_at=datetime('now','+8 hours')`
 
 	for k, v := range fillMap {
 		amtF, _ := v.amt.Float64()

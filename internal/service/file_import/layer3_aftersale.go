@@ -8,7 +8,7 @@ import (
 )
 
 // ImportAftersale 第三层-类型2：售后明细 → daily_aftersale_logs
-func ImportAftersale(ctx context.Context, db *sql.DB, result *ParseResult, codeToID map[string]int64, shopID int64) (int, error) {
+func ImportAftersale(ctx context.Context, db *sql.DB, result *ParseResult, codeToID map[string]int64, skuToShopID map[int64]int64) (int, error) {
 	// 聚合：按 (shop_id, sku_id, record_date)
 	type key struct{ shopID, skuID int64; date string }
 	type agg struct {
@@ -35,7 +35,7 @@ func ImportAftersale(ctx context.Context, db *sql.DB, result *ParseResult, codeT
 		status := strings.TrimSpace(row["服务单状态"])
 		isCancel := strings.Contains(status, "取消")
 
-		k := key{shopID, skuID, date}
+		k := key{skuToShopID[skuID], skuID, date}
 		a := aggr[k]
 		if a == nil { a = &agg{}; aggr[k] = a }
 

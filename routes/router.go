@@ -27,6 +27,17 @@ func Setup(h *handler.Handler) http.Handler {
 	mux.HandleFunc("POST /api/import/batch", h.HandleBatchImport)
 	mux.HandleFunc("POST /api/shops/{id}/copy-yesterday", h.CopyYesterday)
 
+	// 每日源数据记录
+	mux.HandleFunc("GET /api/daily/aftersale", h.ListDailyAftersale)
+	mux.HandleFunc("GET /api/daily/aftersale/{id}", h.GetDailyAftersale)
+	mux.HandleFunc("GET /api/daily/fill-order", h.ListDailyFillOrder)
+	mux.HandleFunc("GET /api/daily/fill-order/{id}", h.GetDailyFillOrder)
+	mux.HandleFunc("GET /api/daily/promotion", h.ListDailyPromotion)
+	mux.HandleFunc("GET /api/daily/promotion/{id}", h.GetDailyPromotion)
+	mux.HandleFunc("GET /api/daily/aftersale/export", h.ExportAftersale)
+	mux.HandleFunc("GET /api/daily/fill-order/export", h.ExportFillOrder)
+	mux.HandleFunc("GET /api/daily/promotion/export", h.ExportPromotion)
+
 	mux.HandleFunc("GET /api/products", h.ListProducts)
 	mux.HandleFunc("POST /api/products", h.CreateProduct)
 	mux.HandleFunc("PUT /api/products/{id}", h.UpdateProduct)

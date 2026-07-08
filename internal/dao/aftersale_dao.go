@@ -12,10 +12,11 @@ func NewAftersaleDao(db *sql.DB) *AftersaleDao { return &AftersaleDao{db: db} }
 
 const upsertAftersaleSQL = `
 INSERT INTO daily_aftersale_logs (
+	    shop_id,
     sku_id, record_date, return_total, return_valid, return_cancel,
-    exchange_total, exchange_valid, exchange_cancel, aftersale_total, aftersale_cancel
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(sku_id, record_date) DO UPDATE SET
+    exchange_total, exchange_valid, exchange_cancel, aftersale_total, aftersale_cancel, operator_name
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(shop_id, sku_id, record_date) DO UPDATE SET
     return_total    = excluded.return_total,
     return_valid    = excluded.return_valid,
     return_cancel   = excluded.return_cancel,
@@ -23,16 +24,16 @@ ON CONFLICT(sku_id, record_date) DO UPDATE SET
     exchange_valid  = excluded.exchange_valid,
     exchange_cancel = excluded.exchange_cancel,
     aftersale_total  = excluded.aftersale_total,
-    aftersale_cancel = excluded.aftersale_cancel,
+    aftersale_cancel = excluded.aftersale_cancel, operator_name = excluded.operator_name,
     updated_at      = datetime('now','+8 hours')
 `
 
 func (d *AftersaleDao) Upsert(ctx context.Context, log *model.DailyAftersaleLog) error {
 	_, err := d.db.ExecContext(ctx, upsertAftersaleSQL,
-		log.SkuID, log.RecordDate,
+		log.ShopID, log.SkuID, log.RecordDate,
 		log.ReturnTotal, log.ReturnValid, log.ReturnCancel,
 		log.ExchangeTotal, log.ExchangeValid, log.ExchangeCancel,
-		log.AftersaleTotal, log.AftersaleCancel,
+		log.AftersaleTotal, log.AftersaleCancel, log.OperatorName,
 	)
 	return err
 }

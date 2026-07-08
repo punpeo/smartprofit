@@ -1,6 +1,8 @@
 package file_import
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
@@ -91,4 +93,18 @@ func parseChineseDate(val string) string {
 	month, _ := strconv.Atoi(parts[0])
 	day, _ := strconv.Atoi(parts[1])
 	return fmt.Sprintf("%04d-%02d-%02d", time.Now().Year(), month, day)
+}
+
+// BuildSKUToShopID 构建 SKU ID→店铺 ID 映射
+func BuildSKUToShopID(ctx context.Context, db *sql.DB) (map[int64]int64, error) {
+	rows, err := db.QueryContext(ctx, `SELECT sku_id, shop_id FROM skus`)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	m := make(map[int64]int64)
+	for rows.Next() {
+		var skuID, shopID int64
+		if err := rows.Scan(&skuID, &shopID); err != nil { continue }
+		m[skuID] = shopID
+	}
+	return m, nil
 }
