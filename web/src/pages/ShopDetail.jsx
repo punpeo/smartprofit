@@ -59,9 +59,9 @@ export function ShopDetail() {
   const [editSku, setEditSku] = useState(null)
   const [editorMode, setEditorMode] = useState('new')
   const [showProfitEditor, setShowProfitEditor] = useState(false)
-  const [timeRange, setTimeRange] = useState('today')
-  const [dateStart, setDateStart] = useState(getDateRange('today').start)
-  const [dateEnd, setDateEnd] = useState(getDateRange('today').end)
+  const [timeRange, setTimeRange] = useState('yesterday')
+  const [dateStart, setDateStart] = useState(getDateRange('yesterday').start)
+  const [dateEnd, setDateEnd] = useState(getDateRange('yesterday').end)
   const [loading, setLoading] = useState(true)
   const fileRef = useRef(null)
   const pageSize = 10
@@ -173,6 +173,10 @@ export function ShopDetail() {
               className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-white/[0.12] text-sm text-white/75 hover:border-white/15 hover:text-white transition-all">
               <Upload size={13} /> 批量导入
             </button>
+            <button onClick={() => navigate('/admin')} title="前往文件导入中心"
+              className="flex items-center gap-1 px-3 py-2 rounded-full text-xs text-white/35 hover:text-white transition-all">
+              导入中心 →
+            </button>
           </div>
         </div>
       </nav>
@@ -235,39 +239,75 @@ export function ShopDetail() {
           </div>
 
           {/* SKU 表格 */}
-          <motion.div variants={{ hidden: {}, show: { transition: { staggerChildren: 0.02 } } }} initial="hidden" animate="show"
-            className="glass-card flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="glass-card flex-1 flex flex-col min-h-0 overflow-hidden">
 
-            <div className="shrink-0 border-b border-white/[0.07]">
-              <table className="w-full">
+            {/* 固定在顶部的表头 */}
+            <div className="shrink-0 border-b border-white/[0.07] bg-[#0e0e14] sticky top-0 z-10">
+              <table className="w-full table-fixed">
+                <colgroup>
+                  <col className="w-[110px]" />
+                  <col className="w-[130px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[70px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[80px]" />
+                </colgroup>
                 <thead>
                   <tr>
-                    {['SKU编码','商品名称','销售额','订单量','推广费','商品成本','利润',''].map((h, i) => (
-                      <th key={h} className={`py-2.5 px-4 text-[11px] font-medium text-white/65 uppercase tracking-wider text-left ${i === 0 ? 'pl-6' : ''} ${i === 7 ? 'pr-6' : ''}`}>{h}</th>
-                    ))}
+                    <th className="py-2.5 pl-6 pr-2 text-[11px] font-medium text-white/65 uppercase tracking-wider text-center">SKU编码</th>
+                    <th className="py-2.5 px-2 text-[11px] font-medium text-white/65 uppercase tracking-wider text-left">商品名称</th>
+                    <th className="py-2.5 px-2 text-[11px] font-medium text-white/65 uppercase tracking-wider text-right">销售额</th>
+                    <th className="py-2.5 px-2 text-[11px] font-medium text-white/65 uppercase tracking-wider text-right">订单量</th>
+                    <th className="py-2.5 px-2 text-[11px] font-medium text-white/65 uppercase tracking-wider text-right">推广费</th>
+                    <th className="py-2.5 px-2 text-[11px] font-medium text-white/65 uppercase tracking-wider text-right">补单数量</th>
+                    <th className="py-2.5 px-2 text-[11px] font-medium text-white/65 uppercase tracking-wider text-right">利润</th>
+                    <th className="py-2.5 pl-2 pr-6 text-[11px] font-medium text-white/65 uppercase tracking-wider text-center">操作</th>
                   </tr>
                 </thead>
               </table>
             </div>
 
+            {/* 可滚动的表体 */}
             <div className="flex-1 overflow-y-auto">
-              <table className="w-full">
+              <table className="w-full table-fixed">
+                <colgroup>
+                  <col className="w-[110px]" />
+                  <col className="w-[130px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[70px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[80px]" />
+                </colgroup>
                 <tbody>
-                  {paged.length > 0 ? paged.map(s => {
+                  {loading ? (
+                    <tr>
+                      <td colSpan={8}>
+                        <div className="flex flex-col items-center justify-center py-20 gap-3">
+                          <div className="w-5 h-5 rounded-full border-2 border-blue-400/20 border-t-blue-400 animate-spin" />
+                          <span className="text-xs text-white/30">加载中...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : paged.length > 0 ? paged.map(s => {
                       const pf = s.final_profit ?? 0
+                      const fmt = (v) => { if (v == null) return '—'; const n = Number(v); return Number.isInteger(n) ? n.toLocaleString() : n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') }
                       return (
                         <motion.tr key={s.sku_code} variants={row}
                           className="border-b border-white/[0.03] hover:bg-white/[0.03] transition-colors">
-                          <td className="py-3 pl-6 pr-4 text-xs text-white/55 font-mono">{s.sku_code}</td>
-                          <td className="py-3 px-4 text-sm text-white/80">{s.product_name}</td>
-                          <td className="py-3 px-4 text-sm text-white/80 tabular-nums">¥ {s.sales_amount?.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-sm text-white/80 tabular-nums">{s.order_count?.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-sm text-white/80 tabular-nums">¥ {s.promotion_total?.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-sm text-white/80 tabular-nums">¥ {s.product_cost?.toLocaleString()}</td>
-                          <td className={`py-3 px-4 text-sm font-semibold tabular-nums ${pf >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            ¥ {pf.toLocaleString()}
+                          <td className="py-3 pl-6 pr-2 text-xs text-white/55 font-mono text-center truncate" title={s.sku_code}>{s.sku_code}</td>
+                          <td className="py-3 px-2 text-sm text-white/80 truncate" title={s.product_name}>{s.product_name || '—'}</td>
+                          <td className="py-3 px-2 text-sm text-white/80 tabular-nums text-right">¥{fmt(s.sales_amount)}</td>
+                          <td className="py-3 px-2 text-sm text-white/80 tabular-nums text-right">{fmt(s.order_count)}</td>
+                          <td className="py-3 px-2 text-sm text-white/80 tabular-nums text-right">¥{fmt(s.promotion_total)}</td>
+                          <td className="py-3 px-2 text-sm text-white/80 tabular-nums text-right">{fmt(s.fill_order_count)}</td>
+                          <td className={`py-3 px-2 text-sm font-semibold tabular-nums text-right ${pf >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {pf >= 0 ? '¥' : '-¥'}{fmt(Math.abs(pf))}
                           </td>
-                          <td className="py-3 pl-4 pr-6">
+                          <td className="py-3 pl-2 pr-6 text-center">
                             <button onClick={() => { setEditorMode('edit'); setEditSku(s); setShowProfitEditor(true) }}
                               className="px-3 py-1.5 rounded-full border border-white/[0.09] text-xs text-blue-400 hover:text-blue-300 hover:border-blue-400/20 transition-all">编辑</button>
                           </td>
@@ -276,10 +316,16 @@ export function ShopDetail() {
                     }) : (
                       <tr>
                         <td colSpan={8}>
-                          <div className="flex flex-col items-center justify-center py-20 text-white/25 gap-3">
-                            <Package size={28} />
-                            <span className="text-xs">暂无数据，点击「新增记录」开始录入</span>
-                          </div>
+                          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
+                            className="flex flex-col items-center justify-center py-20 gap-3">
+                            <div className="w-12 h-12 rounded-2xl bg-white/[0.02] flex items-center justify-center">
+                              <Package size={24} className="text-white/15" />
+                            </div>
+                            <div className="text-center">
+                              <p className="text-sm text-white/30 font-medium">暂无数据</p>
+                              <p className="text-xs text-white/15 mt-1">点击「新增记录」或「批量导入」开始录入</p>
+                            </div>
+                          </motion.div>
                         </td>
                       </tr>
                     )}
@@ -289,18 +335,23 @@ export function ShopDetail() {
 
             {skus.length > 0 && (
               <div className="shrink-0 flex items-center justify-between px-6 py-3 border-t border-white/[0.07]">
-                <span className="text-[11px] text-white/55">第 {page} / {totalPages} 页</span>
+                <span className="text-[11px] text-white/55">{skus.length} 条 · 第 {page}/{totalPages} 页</span>
                 <div className="flex items-center gap-0.5">
                   <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
                     className="p-1.5 rounded-md text-white/70 hover:text-white disabled:opacity-10 disabled:cursor-not-allowed transition-all">
                     <ChevronLeft size={13} />
                   </button>
-                  {Array.from({ length: totalPages }, (_, i) => (
-                    <button key={i + 1} onClick={() => setPage(i + 1)}
-                      className={`w-7 h-7 rounded-md text-[11px] transition-all ${page === i + 1 ? 'bg-white text-black font-medium' : 'text-white/55 hover:text-white hover:bg-white/[0.04]'}`}>
-                      {i + 1}
-                    </button>
-                  ))}
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    let n = i + 1
+                    if (totalPages > 7 && page > 4) n = page - 3 + i
+                    if (n > totalPages) return null
+                    return (
+                      <button key={n} onClick={() => setPage(n)}
+                        className={`w-7 h-7 rounded-md text-[11px] transition-all ${page === n ? 'bg-white text-black font-medium' : 'text-white/55 hover:text-white hover:bg-white/[0.04]'}`}>
+                        {n}
+                      </button>
+                    )
+                  })}
                   <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
                     className="p-1.5 rounded-md text-white/70 hover:text-white disabled:opacity-10 disabled:cursor-not-allowed transition-all">
                     <ChevronRight size={13} />
@@ -308,7 +359,7 @@ export function ShopDetail() {
                 </div>
               </div>
             )}
-          </motion.div>
+          </div>
         </main>
       </div>
 

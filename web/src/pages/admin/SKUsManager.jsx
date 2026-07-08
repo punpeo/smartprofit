@@ -1,11 +1,12 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Trash2, Save, X, Package, Edit3, Search, Trash, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, Save, X, Package, Edit3, Search, Trash, ChevronLeft, ChevronRight, Download, Upload } from 'lucide-react'
 import { api } from '../../api'
-import { ImportBar } from '../../components/ExcelTools'
 import { useDebounce } from '../../hooks/useDebounce'
+import { downloadTemplate, parseExcelFile } from '../../components/ExcelTools'
 
-const TEMPLATE = [['SKU编码', '商品ID', '所属店铺ID']]
+const TEMPLATE_EASY = [['SKU编码', '商品名称', '店铺名称']]
+const TEMPLATE_FULL = [['SKU编码', '商品ID', '所属店铺ID']]
 const row = { hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0 } }
 
 export function SKUsManager() {
@@ -21,24 +22,51 @@ export function SKUsManager() {
   function setSearchVal(val) { setSearch(val); setPage(1) }
   const pageSize = 10
 
-  async function handleImport(rows) {
-    const mapped = rows.map(r => ({
-      sku_code: String(r['SKU编码'] || r.sku_code || ''),
-      product_id: Number(r['商品ID'] || r.product_id) || 0,
-      shop_id: Number(r['所属店铺ID'] || r.shop_id) || shops[0]?.shop_id || 1,
-    })).filter(s => s.sku_code && s.product_id)
-    if (mapped.length === 0) return alert('未识别到有效数据，请确认包含 SKU编码 和 商品ID 列')
+  const fileRef = useRef(null)
 
-    const imported = []
+  async function handleImport(rows) {
+    // 检测模板类型：有「商品名称/店铺名称」→ 简易版；有「商品ID/所属店铺ID」→ 完整版
+    const hasNames = rows.length > 0 && (rows[0]['商品名称'] !== undefined || rows[0]['店铺名称'] !== undefined)
+    const hasIDs = rows.length > 0 && (rows[0]['商品ID'] !== undefined || rows[0]['所属店铺ID'] !== undefined)
+
+    const mapped = rows.map(r => {
+      const code = String(r['SKU编码'] || r.sku_code || '')
+      let productId = 0, shopId = shops[0]?.shop_id || 1
+
+      if (hasIDs) {
+        // 完整版：直接用 ID
+        productId = Number(r['商品ID'] || r.product_id) || 0
+        shopId = Number(r['所属店铺ID'] || r.shop_id) || shopId
+      }
+      if (hasNames) {
+        // 简易版：名称 → 自动匹配 ID
+        const pName = String(r['商品名称'] || r.product_name || '').trim()
+        const sName = String(r['店铺名称'] || r.shop_name || '').trim()
+        if (pName) { const p = products.find(x => x.product_name === pName); if (p) productId = p.product_id }
+        if (sName) { const s = shops.find(x => x.shop_name === sName); if (s) shopId = s.shop_id }
+      }
+      return { sku_code: code, product_id: productId, shop_id: shopId }
+    }).filter(s => s.sku_code && s.product_id)
+
+    if (mapped.length === 0) {
+      alert(hasNames
+        ? '未识别到有效数据。请确认商品名称/店铺名称与后台已录入的一致（区分大小写和空格）'
+        : '未识别到有效数据，请确认包含 SKU编码 和 商品ID 列')
+      return
+    }
+
+    const imported = []; const errors = []
     for (const item of mapped) {
       try {
         const res = await api.createSKU(item)
         imported.push({ sku_id: res.sku_id, ...item })
       } catch {
+        errors.push(item.sku_code)
         imported.push({ sku_id: Date.now() + Math.random(), ...item })
       }
     }
     setSkus(prev => [...prev, ...imported])
+    if (errors.length > 0) alert(`以下 SKU 编码可能已存在，已跳过：${errors.join(', ')}`)
   }
 
   function loadSKUs(shopId) {
@@ -132,7 +160,25 @@ export function SKUsManager() {
             <Search size={14} className="text-white/75" />
             <input value={search} onChange={e => setSearchVal(e.target.value)} placeholder="搜索 SKU..." className="bg-transparent outline-none text-sm text-white/75 placeholder:text-white/50 w-40" />
           </div>
-          <ImportBar onImport={handleImport} templateHeaders={TEMPLATE} templateName="SKU导入模板" label="导入 SKU" />
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={async e => {
+            const file = e.target.files[0]; if (!file) return
+            try { const rows = await parseExcelFile(file); handleImport(rows) } catch { alert('文件解析失败') }
+            e.target.value = ''
+          }} className="hidden" />
+          <button onClick={() => fileRef.current?.click()}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-white/[0.09] text-sm text-white/70 hover:text-white hover:border-white/15 transition-all">
+            <Upload size={13} /> 导入 SKU
+          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={() => downloadTemplate(TEMPLATE_EASY, 'SKU导入模板_简易版(名称)')}
+              className="flex items-center gap-1 px-3 py-2 rounded-l-full border border-white/[0.09] text-xs text-white/55 hover:text-white hover:border-white/12 transition-all" title="使用商品名称和店铺名称导入，无需填写ID">
+              <Download size={12} /> 简易模板
+            </button>
+            <button onClick={() => downloadTemplate(TEMPLATE_FULL, 'SKU导入模板_完整版(ID)')}
+              className="flex items-center gap-1 px-3 py-2 rounded-r-full border border-white/[0.09] border-l-0 text-xs text-white/40 hover:text-white hover:border-white/12 transition-all" title="使用商品ID和店铺ID导入，适合技术用户">
+              ID模板
+            </button>
+          </div>
           {skus.length > 0 && !editing && (
             <button onClick={handleClear}
               className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs text-red-400/70 hover:text-red-400 hover:bg-red-400/5 transition-all">

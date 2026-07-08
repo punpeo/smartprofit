@@ -55,14 +55,14 @@ func createTables(db *sql.DB) error {
 
 	CREATE TABLE IF NOT EXISTS products (
 		product_id                INTEGER PRIMARY KEY AUTOINCREMENT,
-		product_name              TEXT NOT NULL,
+		product_name              TEXT NOT NULL UNIQUE,
 		category                  TEXT NOT NULL DEFAULT '',
 		image_url                 TEXT NOT NULL DEFAULT '',
 		default_cost              REAL NOT NULL DEFAULT 0,
 		default_shipping_cost     REAL NOT NULL DEFAULT 0,
 		default_service_fee_rate  REAL NOT NULL DEFAULT 0,
 		default_tax_rate          REAL NOT NULL DEFAULT 0,
-	platform_commission_rate  REAL NOT NULL DEFAULT 0,
+		platform_commission_rate  REAL NOT NULL DEFAULT 0,
 		default_freight_insurance REAL NOT NULL DEFAULT 0,
 		default_exchange_cost     REAL NOT NULL DEFAULT 0,
 		default_return_cost       REAL NOT NULL DEFAULT 0,
@@ -161,7 +161,6 @@ func createTables(db *sql.DB) error {
 		shop_id             INTEGER NOT NULL DEFAULT 0,
 		sku_id              INTEGER NOT NULL,
 		record_date         TEXT NOT NULL,
-		fill_order_total_num INTEGER NOT NULL DEFAULT 0,
 		fill_order_count     INTEGER NOT NULL DEFAULT 0,
 		fill_order_amount    REAL NOT NULL DEFAULT 0,
 		fill_order_cost      REAL NOT NULL DEFAULT 0,
@@ -209,8 +208,13 @@ func createTables(db *sql.DB) error {
 	-- 触发器：fill_order_logs → profit_logs
 	CREATE TRIGGER IF NOT EXISTS trg_fill_sync AFTER INSERT ON daily_fill_order_logs
 	BEGIN
-		INSERT OR IGNORE INTO daily_profit_logs (sku_id, record_date, fill_order_count, fill_order_amount, fill_order_cost)
-		VALUES (NEW.sku_id, NEW.record_date, NEW.fill_order_count, ROUND(NEW.fill_order_amount,2), ROUND(NEW.fill_order_cost,2));
+		INSERT INTO daily_profit_logs (sku_id, record_date, fill_order_count, fill_order_amount, fill_order_cost)
+		VALUES (NEW.sku_id, NEW.record_date, NEW.fill_order_count, ROUND(NEW.fill_order_amount,2), ROUND(NEW.fill_order_cost,2))
+		ON CONFLICT(sku_id, record_date) DO UPDATE SET
+			fill_order_count = excluded.fill_order_count,
+			fill_order_amount = ROUND(excluded.fill_order_amount,2),
+			fill_order_cost = ROUND(excluded.fill_order_cost,2),
+			updated_at = datetime('now','+8 hours');
 	END;
 	CREATE TRIGGER IF NOT EXISTS trg_fill_sync_upd AFTER UPDATE ON daily_fill_order_logs
 	BEGIN
@@ -223,8 +227,16 @@ func createTables(db *sql.DB) error {
 	-- 触发器：promotion_logs → profit_logs
 	CREATE TRIGGER IF NOT EXISTS trg_promo_sync AFTER INSERT ON daily_promotion_logs
 	BEGIN
-		INSERT OR IGNORE INTO daily_profit_logs (sku_id, record_date, promotion_alliance, promotion_auto, promotion_jd_union, promotion_search, promotion_recommend, promotion_total)
-		VALUES (NEW.sku_id, NEW.record_date, ROUND(NEW.promotion_alliance,2), ROUND(NEW.promotion_auto,2), ROUND(NEW.promotion_jd_union,2), ROUND(NEW.promotion_search,2), ROUND(NEW.promotion_recommend,2), ROUND(NEW.promotion_total,2));
+		INSERT INTO daily_profit_logs (sku_id, record_date, promotion_alliance, promotion_auto, promotion_jd_union, promotion_search, promotion_recommend, promotion_total)
+		VALUES (NEW.sku_id, NEW.record_date, ROUND(NEW.promotion_alliance,2), ROUND(NEW.promotion_auto,2), ROUND(NEW.promotion_jd_union,2), ROUND(NEW.promotion_search,2), ROUND(NEW.promotion_recommend,2), ROUND(NEW.promotion_total,2))
+		ON CONFLICT(sku_id, record_date) DO UPDATE SET
+			promotion_alliance = ROUND(excluded.promotion_alliance,2),
+			promotion_auto = ROUND(excluded.promotion_auto,2),
+			promotion_jd_union = ROUND(excluded.promotion_jd_union,2),
+			promotion_search = ROUND(excluded.promotion_search,2),
+			promotion_recommend = ROUND(excluded.promotion_recommend,2),
+			promotion_total = ROUND(excluded.promotion_total,2),
+			updated_at = datetime('now','+8 hours');
 	END;
 	CREATE TRIGGER IF NOT EXISTS trg_promo_sync_upd AFTER UPDATE ON daily_promotion_logs
 	BEGIN
@@ -236,7 +248,26 @@ func createTables(db *sql.DB) error {
 		WHERE sku_id = NEW.sku_id AND record_date = NEW.record_date;
 	END;
 
-	-- 触发器：promotion_total 自动 = 五项推广之和
+	-- 触发器：aftersale_logs → profit_logs（仅同步有效退货/换货量）
+	CREATE TRIGGER IF NOT EXISTS trg_aftersale_sync AFTER INSERT ON daily_aftersale_logs
+	BEGIN
+		INSERT INTO daily_profit_logs (sku_id, record_date, return_count, exchange_count)
+		VALUES (NEW.sku_id, NEW.record_date, NEW.return_valid, NEW.exchange_valid)
+		ON CONFLICT(sku_id, record_date) DO UPDATE SET
+			return_count = excluded.return_count,
+			exchange_count = excluded.exchange_count,
+			updated_at = datetime('now','+8 hours');
+	END;
+	CREATE TRIGGER IF NOT EXISTS trg_aftersale_sync_upd AFTER UPDATE ON daily_aftersale_logs
+	BEGIN
+		UPDATE daily_profit_logs SET
+			return_count = NEW.return_valid,
+			exchange_count = NEW.exchange_valid,
+			updated_at = datetime('now','+8 hours')
+		WHERE sku_id = NEW.sku_id AND record_date = NEW.record_date;
+	END;
+
+		-- 触发器：promotion_total 自动 = 五项推广之和
 	CREATE TRIGGER IF NOT EXISTS trg_dpl_promo_insert AFTER INSERT ON daily_profit_logs
 	BEGIN
 		UPDATE daily_profit_logs SET promotion_total =
@@ -262,6 +293,7 @@ func createTables(db *sql.DB) error {
 	// 迁移：为旧数据库添加新增列（忽略已存在错误）
 	for _, m := range []string{
 		"ALTER TABLE products ADD COLUMN platform_commission_rate REAL NOT NULL DEFAULT 0",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_products_name ON products(product_name)",
 	} {
 		db.Exec(m)
 	}

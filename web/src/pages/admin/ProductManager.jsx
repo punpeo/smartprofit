@@ -5,7 +5,7 @@ import { api } from '../../api'
 import { ImportBar } from '../../components/ExcelTools'
 import { useDebounce } from '../../hooks/useDebounce'
 
-const TEMPLATE = [['商品名称','分类','默认成本(元)','默认运费(元)','服务费率(如0.066=6.6%)','税费率(如0.003=0.3%)','运费险(元)','换货成本(元)','退货成本(元)','补单成本(元)']]
+const TEMPLATE = [['商品名称','分类','默认成本(元)','默认运费(元)','服务费率(如0.066=6.6%)','税费率(如0.003=0.3%)','平台扣点费率(如0.05=5%)','运费险(元)','换货成本(元)','退货成本(元)','补单成本(元)']]
 const row = { hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0 } }
 
 // [字段名, 标签, 占位提示, step精度]
@@ -14,7 +14,7 @@ const COST_FIELDS = [
   ['default_shipping_cost','默认运费','元/单','0.01'],
   ['default_service_fee_rate','服务费率','如 0.066','0.001'],   // 费率用千分位
   ['default_tax_rate','税费率','如 0.003','0.001'],            // 费率用千分位
-  ['platform_commission_rate','平台扣点','如 0.05','0.001'],
+  ['platform_commission_rate','平台扣点费率','如 0.05','0.001'],
   ['default_freight_insurance','运费险','元/单','0.01'],
   ['default_exchange_cost','换货成本','元/件','0.01'],
   ['default_return_cost','退货成本','元/件','0.01'],
@@ -73,15 +73,26 @@ export function ProductManager() {
     setProducts(prev => prev.filter(p => p.product_id !== id))
   }
 
+  // 模糊查找：去掉 key 中的括号内容后匹配（如 "默认成本(元)" → "默认成本"）
+  function cell(row, key) {
+    if (row[key] !== undefined) return row[key]
+    const clean = key.replace(/\(.*?\)/g, '').trim()
+    for (const k of Object.keys(row)) {
+      if (k.replace(/\(.*?\)/g, '').trim() === clean) return row[k]
+    }
+    return undefined
+  }
   async function handleImport(rows) {
     const mapped = rows.map(r => ({
-      product_name: String(r['商品名称'] || r.product_name || ''),
-      category: String(r['分类'] || r.category || ''),
-      ...Object.fromEntries(COST_FIELDS.map(([k, label]) => [k, parseFloat(r[label] || r[k]) || 0])),
+      product_name: String(cell(r, '商品名称') || r.product_name || ''),
+      category: String(cell(r, '分类') || r.category || ''),
+      ...Object.fromEntries(COST_FIELDS.map(([k, label]) => [k, parseFloat(cell(r, label) || r[k]) || 0])),
     })).filter(p => p.product_name)
     if (mapped.length === 0) return alert('未识别到有效数据')
+    const existMap = new Map(products.map(p => [p.product_name, p.product_id]))
     for (const item of mapped) {
-      try { await api.createProduct(item) } catch {}
+      const existID = existMap.get(item.product_name)
+      try { existID ? await api.updateProduct(existID, item) : await api.createProduct(item) } catch {}
     }
     api.fetchProducts().then(setProducts)
   }

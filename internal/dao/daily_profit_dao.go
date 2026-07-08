@@ -118,7 +118,7 @@ func (d *DailyProfitDao) GetShopSummary(ctx context.Context, shopID int, startDa
 const listByShopAndDateSQL = `
 SELECT
     s.sku_code, COALESCE(p.product_name, '') as product_name,
-    d.sales_amount, d.order_count, d.promotion_total, d.product_cost, d.final_profit
+    d.sales_amount, d.order_count, d.promotion_total, d.fill_order_count, d.product_cost, d.final_profit
 FROM daily_profit_logs d
 JOIN skus s ON d.sku_id = s.sku_id
 LEFT JOIN products p ON s.product_id = p.product_id
@@ -139,7 +139,7 @@ func (d *DailyProfitDao) ListByShopAndDate(ctx context.Context, shopID int, star
 		var item model.SKUDailyItem
 		err := rows.Scan(
 			&item.SKUCode, &item.ProductName,
-			&item.SalesAmount, &item.OrderCount, &item.PromotionTotal, &item.ProductCost, &item.FinalProfit,
+			&item.SalesAmount, &item.OrderCount, &item.PromotionTotal, &item.FillOrderCount, &item.ProductCost, &item.FinalProfit,
 		)
 		if err != nil {
 			return nil, err

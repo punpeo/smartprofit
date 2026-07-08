@@ -1,22 +1,24 @@
 import { useState, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Store, Package, FileText, LayoutDashboard, ChevronRight, Boxes } from 'lucide-react'
+import { ArrowLeft, Store, Package, FileText, LayoutDashboard, ChevronRight, Boxes, Upload } from 'lucide-react'
 import Orb from '../components/Orb'
 
 const ShopsManager = lazy(() => import('./admin/ShopsManager').then(m => ({ default: m.ShopsManager })))
 const ProductManager = lazy(() => import('./admin/ProductManager').then(m => ({ default: m.ProductManager })))
 const SKUsManager = lazy(() => import('./admin/SKUsManager').then(m => ({ default: m.SKUsManager })))
 const DailyRecords = lazy(() => import('./admin/DailyRecords').then(m => ({ default: m.DailyRecords })))
+const ImportCenter = lazy(() => import('./admin/ImportCenter').then(m => ({ default: m.ImportCenter })))
 
 const NAV = [
+  { key: 'import',   label: '文件导入', icon: Upload,          desc: '批量导入经营数据' },
   { key: 'shops',    label: '店铺管理', icon: Store,          desc: '管理所有店铺信息' },
   { key: 'products', label: '商品管理', icon: Boxes,          desc: '管理商品及默认成本' },
   { key: 'skus',     label: 'SKU 管理', icon: Package,         desc: '管理商品 SKU 数据' },
   { key: 'records',  label: '每日记录', icon: FileText,        desc: '查看每日利润记录' },
 ]
 
-const pages = { shops: ShopsManager, products: ProductManager, skus: SKUsManager, records: DailyRecords }
+const pages = { import: ImportCenter, shops: ShopsManager, products: ProductManager, skus: SKUsManager, records: DailyRecords }
 
 function PageLoader() {
   return (

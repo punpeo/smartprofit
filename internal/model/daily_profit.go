@@ -47,6 +47,7 @@ type SKUDailyItem struct {
 	SalesAmount    float64 `db:"sales_amount" json:"sales_amount"`       // 销售额
 	OrderCount     int     `db:"order_count" json:"order_count"`         // 订单量
 	PromotionTotal float64 `db:"promotion_total" json:"promotion_total"` // 推广费合计
+	FillOrderCount int     `db:"fill_order_count" json:"fill_order_count"` // 补单数量
 	ProductCost    float64 `db:"product_cost" json:"product_cost"`       // 商品成本
 	FinalProfit    float64 `db:"final_profit" json:"final_profit"`       // 最终利润
 }

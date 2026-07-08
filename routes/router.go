@@ -15,6 +15,8 @@ func Setup(h *handler.Handler) http.Handler {
 	mux.HandleFunc("PUT /api/shops/{id}", h.UpdateShop)
 	mux.HandleFunc("DELETE /api/shops/{id}", h.DeleteShop)
 	mux.HandleFunc("POST /api/clear-all", h.ClearAll)
+	mux.HandleFunc("POST /api/clear-business-data", h.ClearBusinessData)
+	mux.HandleFunc("POST /api/clear-products", h.ClearProducts)
 	mux.HandleFunc("GET /api/shops/{id}/summary", h.ShopSummary)
 	mux.HandleFunc("GET /api/shops/{id}/skus", h.ListSKUs)
 	mux.HandleFunc("POST /api/aftersale", h.UpsertAftersale)
@@ -22,6 +24,7 @@ func Setup(h *handler.Handler) http.Handler {
 	mux.HandleFunc("POST /api/sales", h.UpsertSales)
 	mux.HandleFunc("POST /api/fill-order", h.UpsertFillOrder)
 	mux.HandleFunc("POST /api/promotion", h.UpsertPromotion)
+	mux.HandleFunc("POST /api/import/batch", h.HandleBatchImport)
 	mux.HandleFunc("POST /api/shops/{id}/copy-yesterday", h.CopyYesterday)
 
 	mux.HandleFunc("GET /api/products", h.ListProducts)
